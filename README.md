@@ -128,7 +128,53 @@ streamlit run dashboard.py
 streamlit run app.py
 ```
 
-A future, optional second-pass experiment (`python feature_transformation_experiments.py`) is **not yet implemented** in this branch and will be added in a separate Phase 8 commit. When added, the recommended position is **after `python model_training.py`**.
+### Optional Phase 8 — transformed-feature experiment
+
+`feature_transformation_experiments.py` is implemented and **optional**. It does not replace the baseline pipeline; it produces a parallel set of model artifacts so the dashboard can render a controlled side-by-side comparison.
+
+Recommended position in the run order (insert immediately after `model_training.py`):
+
+```bash
+python data_ingestion.py
+python feature_engineering.py
+python bubble_signals.py
+python backtesting.py
+python ml_dataset.py
+python model_training.py
+python feature_transformation_experiments.py     # Optional — Phase 8
+python rare_event_analysis.py
+python imbalance_experiments.py
+python event_validation.py
+python cost_threshold_analysis.py
+python firth_logistic_export.py
+python hazard_model.py
+python poisson_count_model.py
+python ml_inference.py
+python model_evaluation.py
+streamlit run dashboard.py
+```
+
+What it does:
+
+- Loads `data/processed/ml_burst_dataset.parquet` (does not modify it).
+- Builds a transformed-feature pipeline including log / signed-log, training-fit winsorization, past-only rolling z-scores by ticker, past-only expanding percentile ranks by ticker, economically meaningful interactions, training-fit regime flags, volatility-adjusted returns, drawdown-state flags, and a small set of squared terms.
+- Trains the same model families on the transformed features (Logistic Regression, Elastic Net Logistic, Random Forest, Balanced Random Forest, XGBoost, and **LightGBM** when installed).
+- Uses the same chronological 70/85 split logic as `model_training.py`, with the same target (`burst_6m_segment`) and the same threshold-selection rules.
+
+Outputs (all NEW files — no baseline file is overwritten):
+
+```
+data/processed/transformed_feature_model_results.parquet
+data/processed/transformed_feature_predictions.parquet
+data/processed/transformed_feature_importance.parquet
+data/processed/transformed_feature_top_k_lift.parquet
+data/processed/transformed_feature_calibration.parquet
+data/processed/transformed_feature_list.parquet
+reports/transformed_feature_experiment_summary.md
+models/transformed/*.pkl
+```
+
+In the dashboard, open **Section 7 — Machine Learning Model Lab**. There is a checkbox **"Show transformed-feature model results"** at the top that switches every tab between baseline and transformed views, plus a dedicated **"Transformed vs Baseline"** tab that always shows both side by side regardless of the toggle. If the experiment has not been run, every transformed view displays the exact command to run.
 
 ## 7. Virtual environment setup
 
@@ -255,21 +301,30 @@ Findings change with each pipeline re-run, but the general pattern is:
 - Expanded SEC coverage via fallback XBRL concept maps.
 - Optional fine-tuned text sentiment features for the AI-cycle monitor.
 
-## 16. Optional transformed-feature experiment (planned, not yet implemented)
+## 16. Transformed-feature experiment (implemented — optional)
 
-To be added in a later commit as `feature_transformation_experiments.py`. Goals (per the project specification):
+`feature_transformation_experiments.py` is included as a controlled, leakage-respecting experiment. Highlights:
 
-- Test economically meaningful transformations (log / signed-log, winsorization, rolling z-scores by ticker, percentile ranks, interactions, regime-adjusted features, volatility-adjusted returns, drawdown-state flags).
-- Fit the same model families on transformed features without overwriting baseline artifacts.
-- Save outputs separately:
-  - `data/processed/transformed_feature_model_results.parquet`
-  - `data/processed/transformed_feature_predictions.parquet`
-  - `data/processed/transformed_feature_importance.parquet`
-  - `reports/transformed_feature_experiment_summary.md`
-- Compare baseline vs transformed on: PR-AUC, ROC-AUC, MCC, top-5/10% lift, calibration, false-positive burden, and event-level validation.
-- Keep the framing honest: "Transformations may improve feature geometry and make patterns easier for models to learn, but they do not create new independent historical bubbles."
+- **Same target, same splits, same models.** Identical chronological 70/85 split logic, same `burst_6m_segment` target, same model families plus optional **LightGBM**. The only difference is the feature pipeline.
+- **Leakage discipline.** Winsorization quantiles and regime-flag thresholds are fit on the **train split only**. Rolling z-scores and percentile ranks use **only past observations of the same ticker** (`shift(1)` + expanding window, minimum 12 weeks of history). The supervised target is never used as a feature, and `future_*` / `target_valid_*` / legacy `burst_*` columns are blacklisted from the feature pool.
+- **Transformations implemented:** log1p / signed-log; train-fit winsorization at 1%/99%; rolling z-scores by ticker; expanding percentile ranks by ticker; seven economically motivated interactions; train-fit regime flags (high/low inflation, rising/falling rates, recession, high volatility, financial stress); volatility-adjusted returns; drawdown-state flags; squared terms for a few stretch variables.
+- **Separate outputs.** Every output is namespaced — no baseline file is touched. See the list above.
+- **Dashboard surface.** Section 7 (ML Model Lab) gains a checkbox **"Show transformed-feature model results"** plus a dedicated **"Transformed vs Baseline"** tab that always shows the side-by-side comparison.
+- **Honest framing.** The dashboard explicitly states: *"Feature transformations may improve feature geometry and make patterns easier for models to learn, but they do not create new independent historical bubbles. They improve signal extraction; they do not remove regime uncertainty."*
 
-This experiment is **deferred** until the dashboard refactor and bug-fix phases are stable.
+To run the experiment:
+
+```bash
+python feature_transformation_experiments.py
+```
+
+To use LightGBM as the additional benchmark, install it first:
+
+```bash
+pip install lightgbm
+```
+
+The script falls back gracefully and skips LightGBM if it is not installed.
 
 ---
 

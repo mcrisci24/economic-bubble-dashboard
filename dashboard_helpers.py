@@ -77,6 +77,13 @@ ARTIFACT_TO_SCRIPT: dict[str, str] = {
     "cost_threshold_results": "cost_threshold_analysis.py",
     "cost_thresholds": "cost_threshold_analysis.py",
     "firth_coefficients": "firth_logistic_export.py (then firth_logistic_optional.R in R)",
+    # Phase 8 — transformed-feature experiment (optional)
+    "transformed_results":      "feature_transformation_experiments.py",
+    "transformed_predictions":  "feature_transformation_experiments.py",
+    "transformed_importance":   "feature_transformation_experiments.py",
+    "transformed_top_k_lift":   "feature_transformation_experiments.py",
+    "transformed_calibration":  "feature_transformation_experiments.py",
+    "transformed_feature_list": "feature_transformation_experiments.py",
 }
 
 
@@ -163,6 +170,13 @@ def load_all_data() -> dict[str, pd.DataFrame]:
         "cost_threshold_results": load_parquet_file("ml_cost_threshold_results.parquet"),
         "cost_thresholds": load_parquet_file("ml_cost_thresholds.parquet"),
         "firth_coefficients": load_csv_file("firth_logistic_coefficients.csv"),
+        # Phase 8 — transformed-feature experiment outputs (optional)
+        "transformed_results":      load_parquet_file("transformed_feature_model_results.parquet"),
+        "transformed_predictions":  load_parquet_file("transformed_feature_predictions.parquet"),
+        "transformed_importance":   load_parquet_file("transformed_feature_importance.parquet"),
+        "transformed_top_k_lift":   load_parquet_file("transformed_feature_top_k_lift.parquet"),
+        "transformed_calibration":  load_parquet_file("transformed_feature_calibration.parquet"),
+        "transformed_feature_list": load_parquet_file("transformed_feature_list.parquet"),
     }
 
 

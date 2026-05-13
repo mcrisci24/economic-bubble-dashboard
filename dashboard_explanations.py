@@ -473,6 +473,59 @@ def render_best_model_by_goal_expander() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 8 — Feature-transformation experiment
+# ---------------------------------------------------------------------------
+TRANSFORMATION_FRAMING = (
+    "**Feature transformations may improve feature geometry and make patterns "
+    "easier for models to learn, but they do not create new independent "
+    "historical bubbles. They improve signal extraction; they do not remove "
+    "regime uncertainty.**"
+)
+
+
+def transformation_methodology_md() -> str:
+    return (
+        "### Why this experiment exists\n\n"
+        "Many of the baseline predictors (market cap, P/E, EV/sales, returns, "
+        "volatility, distance from 200DMA, valuation ratios) are **heavily skewed, "
+        "wildly different in scale, or non-linearly related to drawdown risk**. "
+        "Linear models — Logistic Regression and Elastic Net — have a hard time "
+        "with such inputs without help. Tree-based models tolerate them better but "
+        "still benefit from regime flags and interactions when the underlying "
+        "signal is interaction-driven.\n\n"
+        "This experiment tests a *controlled* set of economically meaningful "
+        "transformations to see whether they actually improve out-of-time "
+        "performance, **without** touching the baseline pipeline. The baseline is "
+        "preserved exactly so the comparison is honest.\n\n"
+        "### The transformations\n\n"
+        "| Family | What it does | Why it helps | Why it can fail |\n"
+        "|---|---|---|---|\n"
+        "| **log1p / signed-log** | Compresses extreme right tails of nonneg (`market_cap`, `revenue`, `P/S`) and signed (`returns`, `macro changes`) variables. | Linear models stop being dominated by trillion-dollar names or one outlier crisis return. | Loses interpretability of the original units; mostly cosmetic for tree models. |\n"
+        "| **Winsorization (1%/99%)** | Clips extreme values using **TRAIN-fit** quantiles. | Stops one freak P/E or volatility spike from controlling a fit. | Train-fit bounds may be too tight or too loose for a later regime; we never refit on validation/test. |\n"
+        "| **Rolling z-scores by ticker** | 'How unusual is this value relative to *this asset's* own history?' Past-only expanding window per ticker. | A 30% drawdown means different things for SPY vs BTC; ticker-relative z-scores make features comparable. | Early in a ticker's history the z-score is unstable; we require ≥12 weeks of history. |\n"
+        "| **Expanding percentile by ticker** | 'NVDA's valuation is in its 95th historical percentile.' Past-only. | Much more readable than raw z-scores for non-experts. | Same min-history caveat as z-scores. |\n"
+        "| **Interactions** | A small set of economically motivated pairwise products (valuation × momentum, volatility × drawdown, macro tightening × trend stretch). | Bubbles often emerge from *combinations* (extreme valuation **and** extreme momentum), not single features. | Adding hundreds of interactions would overfit; we add only 7. |\n"
+        "| **Regime flags** | Binary indicators for high inflation, rising/falling rates, recession, high volatility, financial stress. **TRAIN-fit** thresholds. | Same signal often means different things in different macro regimes. | Quantile-based regime cutoffs can drift; we never re-fit them on test data. |\n"
+        "| **Volatility-adjusted returns** | `return / volatility` — a 20% move in BTC ≠ a 20% move in SPY. | Makes momentum comparable across very different volatility profiles. | Division by tiny vol values is gated to avoid blow-ups. |\n"
+        "| **Drawdown-state flags** | Simple on/off indicators (`in_40pct_drawdown`, `above_200dma`, `rsi_oversold`). | Cheap interpretable state lights tree models can split on. | Only useful if the model can compose them with other features. |\n"
+        "| **Squared terms** | Curvature for `distance_from_200dma`, `weekly_rsi`, `volatility_30d`, `drawdown_pct`, `warning_score`. | Lets linear models notice when 'a lot' becomes 'too much'. | Easy to over-fit; we add only 5. |\n\n"
+        "### Leakage discipline\n\n"
+        "- Winsorization quantiles and regime thresholds are fit on the **TRAIN split only** and applied unchanged to validation/test.\n"
+        "- Rolling z-scores and percentile ranks use **only past observations of the same ticker** — implemented with expanding windows that exclude the current row (`shift(1)`).\n"
+        "- The supervised target `burst_6m_segment` is never used as a feature; `future_*`, `target_valid_*`, and legacy `burst_*` columns are blacklisted from the feature pool.\n"
+        "- Splits are **chronological** (70/85 by unique date), identical to the baseline.\n\n"
+        f"### Honest caveat\n\n{TRANSFORMATION_FRAMING}\n"
+    )
+
+
+def render_transformation_methodology_expander() -> None:
+    render_expander(
+        "🧪 Why transformations were tested and how they were built",
+        transformation_methodology_md(),
+    )
+
+
 def render_calibration_caveat_expander() -> None:
     render_expander(
         "🎯 Why we treat scores as resemblance, not probability",

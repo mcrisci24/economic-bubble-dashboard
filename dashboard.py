@@ -73,6 +73,7 @@ from config import (
 )
 from dashboard_explanations import (
     PROJECT_DISCLAIMER,
+    TRANSFORMATION_FRAMING,
     project_purpose_md,
     what_we_can_and_cannot_answer_md,
     what_is_a_bubble_md,
@@ -93,6 +94,7 @@ from dashboard_explanations import (
     signal_confirmation_md,
     best_model_depends_on_goal_md,
     full_metric_glossary_md,
+    transformation_methodology_md,
     render_expander,
     render_project_disclaimer,
     render_global_vs_segment_expander,
@@ -101,6 +103,7 @@ from dashboard_explanations import (
     render_signal_confirmation_expander,
     render_best_model_by_goal_expander,
     render_calibration_caveat_expander,
+    render_transformation_methodology_expander,
 )
 from dashboard_helpers import (
     auc_from_curve,
@@ -765,6 +768,34 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
     if missing_artifacts_block(required, section_label="the ML lab"):
         return
 
+    # -------- Baseline vs transformed-feature toggle (Phase 8) --------------
+    transformed_results = data.get("transformed_results", pd.DataFrame())
+    transformed_available = not transformed_results.empty
+    st.markdown("#### Feature set")
+    show_transformed = st.checkbox(
+        "Show transformed-feature model results",
+        value=False,
+        help=(
+            "When checked, the ML Lab tabs render the transformed-feature experiment "
+            "(Phase 8). When unchecked (default), they render the baseline. The "
+            "Transformed vs Baseline tab compares both regardless of this toggle."
+        ),
+        key="ml_lab_show_transformed",
+    )
+    if show_transformed and not transformed_available:
+        st.warning(
+            "Transformed-feature experiment outputs are missing. Run:\n\n"
+            "```\npython feature_transformation_experiments.py\n```\n\n"
+            "Falling back to baseline results for this view."
+        )
+        show_transformed = False
+    if show_transformed:
+        st.info(
+            "**Viewing transformed-feature results.** All tables, charts, and "
+            "feature importance below come from `feature_transformation_experiments.py`. "
+            f"\n\n{TRANSFORMATION_FRAMING}"
+        )
+
     render_metric_glossary_expander()
     render_global_vs_segment_expander()
     render_best_model_by_goal_expander()
@@ -774,12 +805,23 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
     render_expander("📈 Why PR-AUC matters for rare events",         why_pr_auc_matters_md())
     render_expander("🧰 Model families in this project",             model_families_md())
 
-    results = data["ml_results"].copy()
-    predictions = data["ml_predictions"].copy()
-    importance = data["ml_feature_importance"].copy()
+    # Data routing: when the toggle is on we swap in transformed artifacts.
+    # `top_decile` has no transformed equivalent (the experiment writes
+    # `transformed_top_k_lift` instead), so the Top-Decile tab will still
+    # show baseline values with a small caption in transformed mode.
+    if show_transformed:
+        results = transformed_results.copy()
+        predictions = data.get("transformed_predictions", pd.DataFrame()).copy()
+        importance = data.get("transformed_importance", pd.DataFrame()).copy()
+        calibration = data.get("transformed_calibration", pd.DataFrame()).copy()
+        top_decile = data.get("ml_top_decile", pd.DataFrame())  # no transformed equivalent
+    else:
+        results = data["ml_results"].copy()
+        predictions = data["ml_predictions"].copy()
+        importance = data["ml_feature_importance"].copy()
+        calibration = data.get("ml_calibration", pd.DataFrame())
+        top_decile = data.get("ml_top_decile", pd.DataFrame())
     thresholds = data.get("ml_thresholds", pd.DataFrame())
-    top_decile = data.get("ml_top_decile", pd.DataFrame())
-    calibration = data.get("ml_calibration", pd.DataFrame())
     conclusions = data.get("ml_conclusions", pd.DataFrame())
 
     tabs = st.tabs([
@@ -792,6 +834,7 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
         "False-positive audit",
         "Feature importance",
         "Plain-English summary",
+        "Transformed vs Baseline",
     ])
 
     # --- Tab: executive model conclusion -------------------------------------
@@ -1119,6 +1162,194 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
             "today's conditions *resemble* historical pre-drawdown regimes. High scores mean similar conditions "
             "were historically followed by major drawdowns more often than baseline — but they can still be wrong."
         )
+
+    # --- Tab: Transformed vs Baseline (Phase 8) ------------------------------
+    with tabs[9]:
+        _render_transformed_vs_baseline_tab(data)
+
+
+# -----------------------------------------------------------------------------
+# Phase 8 — Transformed vs Baseline comparison tab (rendered inside ML Lab).
+# -----------------------------------------------------------------------------
+def _render_transformed_vs_baseline_tab(data: dict[str, pd.DataFrame]) -> None:
+    """Side-by-side comparison of baseline vs transformed-feature results.
+
+    The tab does *not* depend on the toggle at the top of the ML Lab page —
+    it always renders both pipelines next to each other so the reader can
+    decide whether transformations actually helped.
+    """
+    st.markdown("### Transformed Feature Experiment — controlled comparison")
+    st.markdown(
+        "This tab compares the baseline supervised pipeline against the "
+        "transformed-feature pipeline on the **same target, same chronological "
+        "splits, same model families, and same metrics**. The only thing that "
+        "differs is the feature pipeline. "
+        "Transformed features are only useful if they improve out-of-time model "
+        "performance **without** increasing false-positive burden."
+    )
+    render_transformation_methodology_expander()
+
+    baseline = data.get("ml_results", pd.DataFrame())
+    transformed = data.get("transformed_results", pd.DataFrame())
+    if transformed.empty:
+        st.warning(
+            "Transformed-feature experiment outputs are missing. Run:\n\n"
+            "```\npython feature_transformation_experiments.py\n```\n\n"
+            "Until then this tab will only show the baseline."
+        )
+        if baseline.empty:
+            return
+        st.dataframe(baseline[baseline["split"].eq("test")] if "split" in baseline.columns else baseline,
+                     use_container_width=True, hide_index=True)
+        return
+
+    if baseline.empty:
+        st.error("Baseline results are missing — cannot compare. Run `python model_training.py` first.")
+        return
+
+    # ---- Side-by-side metrics table ----------------------------------------
+    metric_cols = [
+        "pr_auc", "roc_auc", "mcc",
+        "precision", "recall", "f1",
+        "false_positives_per_true_positive", "brier_score",
+    ]
+    keep_baseline = ["model", "model_scope", "split"] + [c for c in metric_cols if c in baseline.columns]
+    keep_trans    = ["model", "model_scope", "split"] + [c for c in metric_cols if c in transformed.columns]
+
+    base_test  = baseline[baseline["split"].eq("test")][keep_baseline].copy() if "split" in baseline.columns else baseline[keep_baseline].copy()
+    trans_test = transformed[transformed["split"].eq("test")][keep_trans].copy() if "split" in transformed.columns else transformed[keep_trans].copy()
+
+    # Some baseline rows use `asset_segment` instead of `model_scope`. Normalise.
+    if "model_scope" not in base_test.columns and "asset_segment" in baseline.columns:
+        base_test["model_scope"] = baseline.loc[base_test.index, "asset_segment"]
+
+    base_renamed  = base_test.rename(columns={c: f"baseline_{c}" for c in metric_cols if c in base_test.columns})
+    trans_renamed = trans_test.rename(columns={c: f"transformed_{c}" for c in metric_cols if c in trans_test.columns})
+
+    merged = pd.merge(base_renamed, trans_renamed, on=["model", "model_scope", "split"], how="outer")
+
+    # Compute deltas (transformed minus baseline). Higher = better for AUCs/MCC/precision/recall.
+    # For FP burden and Brier the desirable direction is LOWER, so report change with that sign in mind.
+    for m in metric_cols:
+        b_col = f"baseline_{m}"
+        t_col = f"transformed_{m}"
+        if b_col in merged.columns and t_col in merged.columns:
+            merged[f"delta_{m}"] = pd.to_numeric(merged[t_col], errors="coerce") - pd.to_numeric(merged[b_col], errors="coerce")
+
+    # Friendlier column order
+    ordered: list[str] = ["model", "model_scope", "split"]
+    for m in metric_cols:
+        for prefix in ("baseline_", "transformed_", "delta_"):
+            col = f"{prefix}{m}"
+            if col in merged.columns:
+                ordered.append(col)
+    merged = merged[ordered].sort_values(["model_scope", "model"]).reset_index(drop=True)
+
+    st.subheader("Side-by-side test-split metrics")
+    st.dataframe(merged, use_container_width=True, hide_index=True)
+    render_interpretation(
+        what_chart_shows="Every model × scope × split row, with baseline metrics, transformed metrics, and the delta.",
+        how_to_read=(
+            "Positive `delta_pr_auc`, `delta_roc_auc`, `delta_mcc`, `delta_precision`, `delta_recall` = transformations helped. "
+            "Positive `delta_false_positives_per_true_positive` = MORE alert noise, worse. "
+            "Negative `delta_brier_score` = better calibration."
+        ),
+        current_result="Look for rows where transformations improve PR-AUC and MCC *without* worsening FP/TP.",
+        do_not_overclaim="A delta of +0.005 on one model is not a story. Look for consistent direction across scopes.",
+    )
+
+    # ---- Chart: PR-AUC change by model × scope (grouped bar) ---------------
+    if "delta_pr_auc" in merged.columns:
+        chart_df = merged.dropna(subset=["delta_pr_auc"]).copy()
+        if not chart_df.empty:
+            fig = px.bar(
+                chart_df.sort_values("delta_pr_auc"),
+                x="model", y="delta_pr_auc", color="model_scope",
+                barmode="group",
+                title="Test PR-AUC: transformed minus baseline (positive = transformations helped)",
+            )
+            fig.add_hline(y=0, line_dash="dash", line_color="black")
+            fig.update_layout(height=420)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Chart: FP burden change (positive = worse) ------------------------
+    if "delta_false_positives_per_true_positive" in merged.columns:
+        chart_df = merged.dropna(subset=["delta_false_positives_per_true_positive"]).copy()
+        # Drop infinities that come from divide-by-zero TP=0 rows
+        chart_df = chart_df[np.isfinite(chart_df["delta_false_positives_per_true_positive"])]
+        if not chart_df.empty:
+            fig = px.bar(
+                chart_df.sort_values("delta_false_positives_per_true_positive"),
+                x="model", y="delta_false_positives_per_true_positive", color="model_scope",
+                barmode="group",
+                title="Test FP/TP: transformed minus baseline (negative = cleaner alerts)",
+            )
+            fig.add_hline(y=0, line_dash="dash", line_color="black")
+            fig.update_layout(height=420)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Top-5% lift comparison (cross-source) -----------------------------
+    base_topk  = data.get("ml_top_k_lift",          pd.DataFrame())
+    trans_topk = data.get("transformed_top_k_lift", pd.DataFrame())
+    if not base_topk.empty and not trans_topk.empty and "top_label" in base_topk.columns and "top_label" in trans_topk.columns:
+        st.subheader("Top-5% / Top-10% lift comparison")
+        for label in ("Top 5%", "Top 10%"):
+            b = base_topk[(base_topk["split"].eq("test")) & (base_topk["top_label"].eq(label))][
+                ["model", "model_scope", "lift_vs_base_rate"]
+            ].rename(columns={"lift_vs_base_rate": "baseline_lift"})
+            t = trans_topk[(trans_topk["split"].eq("test")) & (trans_topk["top_label"].eq(label))][
+                ["model", "model_scope", "lift_vs_base_rate"]
+            ].rename(columns={"lift_vs_base_rate": "transformed_lift"})
+            m = pd.merge(b, t, on=["model", "model_scope"], how="outer")
+            if m.empty:
+                continue
+            m["delta_lift"] = m["transformed_lift"] - m["baseline_lift"]
+            st.markdown(f"**{label}**")
+            st.dataframe(m.sort_values("delta_lift", ascending=False),
+                         use_container_width=True, hide_index=True)
+
+    # ---- Feature importance comparison -------------------------------------
+    base_imp  = data.get("ml_feature_importance", pd.DataFrame())
+    trans_imp = data.get("transformed_importance", pd.DataFrame())
+    if not trans_imp.empty:
+        st.subheader("Feature importance — transformed pipeline")
+        imp_scope_choices = sorted(trans_imp["model_scope"].dropna().unique()) if "model_scope" in trans_imp.columns else ["global"]
+        imp_scope = st.selectbox("Scope", imp_scope_choices,
+                                  index=imp_scope_choices.index("global") if "global" in imp_scope_choices else 0,
+                                  key="trans_vs_base_imp_scope")
+        imp_model_choices = sorted(trans_imp[trans_imp["model_scope"].eq(imp_scope)]["model"].dropna().unique())
+        if imp_model_choices:
+            imp_model = st.selectbox("Model", imp_model_choices, key="trans_vs_base_imp_model")
+            top_n = st.slider("Top N transformed features", 5, 30, 15, 5, key="trans_vs_base_imp_topn")
+            imp = trans_imp[
+                (trans_imp["model_scope"].eq(imp_scope)) & (trans_imp["model"].eq(imp_model))
+            ].sort_values("importance", ascending=False).head(top_n)
+            if not imp.empty:
+                st.plotly_chart(
+                    feature_importance_bar(imp, title=f"Transformed: {imp_model} / {imp_scope}"),
+                    use_container_width=True,
+                )
+
+    if not base_imp.empty and not trans_imp.empty:
+        # Show baseline alongside if a comparable model_scope/model is present
+        st.caption(
+            "Baseline feature importance is on the **Feature importance** tab of this lab. "
+            "Compare which families (technical, valuation, macro, rule-based) dominate the two pipelines."
+        )
+
+    # ---- Final interpretation box ------------------------------------------
+    render_interpretation(
+        what_chart_shows="Whether transformed features changed model performance vs the baseline.",
+        how_to_read=(
+            "Linear models (Logistic, Elastic Net) tend to gain the most from transformations. "
+            "Tree models gain less. If a tree model shows a huge jump, suspect over-correlation with the target before celebrating."
+        ),
+        current_result="Inspect the side-by-side table for consistent positive PR-AUC/MCC deltas without FP/TP increases.",
+        do_not_overclaim=(
+            "Transformations improve representation of the predictors. They do not create new independent historical "
+            "bubble events. A small metric gain on a single scope is not evidence the project story has changed."
+        ),
+    )
 
 
 # =============================================================================
