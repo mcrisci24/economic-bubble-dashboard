@@ -51,3 +51,22 @@ Thumbs.db
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
+
+# Streamlit local cache / secrets
+.streamlit/secrets.toml
+.streamlit/cache/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage / pytest
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+
+# Local generated experiment artifacts (transformed-feature experiment, when added)
+data/processed/transformed_feature_*.parquet
+reports/transformed_feature_*.md

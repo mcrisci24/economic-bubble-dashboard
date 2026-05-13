@@ -1,98 +1,101 @@
 # Economic Bubble Monitoring & Investment Strategy Dashboard
 
-A Python + Streamlit research dashboard for studying historical bubble cycles, bubble warning/recovery signals, SEC-derived valuation history, and educational strategy backtests.
+A Python + Streamlit research dashboard for studying historical bubble cycles, rule-based bubble warning/recovery signals, SEC-derived valuation history, supervised machine-learning resemblance models, rare-event diagnostics, hazard/onset models, segment-level Poisson count models, and educational strategy backtests.
 
-**This is not financial advice.** It is an educational and research-oriented backtesting project.
+> **This dashboard studies historical bubble-like market regimes and estimates whether current or past asset conditions resemble historically higher-risk drawdown regimes. It is a research signal and model-interpretation tool, not a trading oracle. Nothing in this repository is personalized financial advice.**
 
-## Files
+---
 
-- `data_ingestion.py`
+## 1. Project overview
 
-Downloads market prices, macro indicators, and SEC valuation/fundamental data where available.
+This project began as a historical bubble analysis dashboard. It has grown into a richer research stack that combines:
 
+- Public market and macro data ingestion
+- SEC EDGAR filing-date-aware valuation/fundamental features (where coverage exists)
+- Transparent rule-based bubble warning and recovery scores
+- Bubble phase labels and historical bubble comparison tools
+- Strategy/backtesting utilities
+- Supervised machine learning models for forward drawdown risk
+- Rare-event diagnostics, top-k lift, percentile risk buckets, calibration audits
+- Imbalance-method experiments (Balanced RF, SMOTE, SMOTE-ENN)
+- Event-level (leave-one-crisis-style) validation
+- Cost-threshold stress tests
+- Discrete-time hazard / onset modeling with leakage audit
+- Segment-level Poisson count modeling
+- Current AI-cycle ML risk scoring
+- A Streamlit dashboard that surfaces every layer with interpretations, expanders, and signal confirmation
 
-- `feature_engineering.py`
+## 2. Research question
 
-Builds technical indicators, returns, drawdowns, volatility, moving averages, valuation features, and macro-aligned features.
+> **Can historical bubble-like market patterns help identify data-driven warning, risk-ranking, and re-entry signals for a possible current or future AI-related market cycle?**
 
-- `bubble_signals.py`
+The dashboard studies past regimes including the dot-com bubble, the housing/credit crisis, crypto cycles, COVID-era speculation, the AI / mega-cap technology cycle, and (optionally) commodity, Japan, and China cycles.
 
-Creates transparent rule-based warning scores, recovery scores, and phase labels.
+The framing is intentionally narrow: **ranking and resemblance, not prophecy**.
 
-- `backtesting.py`
+## 3. What the dashboard *does*
 
-Runs historical strategy/backtesting logic used by the Investment Simulator and strategy comparison outputs.
+- Compares historical bubble episodes on a normalized basis (peak = 100).
+- Renders transparent rule-based warning and recovery scores per ticker.
+- Surfaces an ML "resemblance" score with explicit `model_scope` (global vs segment).
+- Reports top-5% / top-10% bucket lift, calibration curves, false-positive burden, and event-level validation.
+- Combines rule, ML, and hazard layers into a per-ticker **signal confirmation table**.
+- Lets the user backtest several historical exit/re-entry strategies.
 
-- `ml_dataset.py`
+## 4. What the dashboard explicitly *does not* claim
 
-Builds the supervised machine-learning dataset and creates forward drawdown target variables such as burst_6m_segment.
+- It does **not** predict the exact top, bottom, or crash date of any asset.
+- It does **not** claim that the current AI cycle is or is not a bubble.
+- It does **not** issue personalized buy/sell recommendations.
+- It does **not** guarantee that historical signals will continue to work in the future.
 
-- `model_training.py`
+## 5. Repository structure
 
-Trains the main supervised models: Logistic Regression, Elastic Net Logistic, Random Forest, Balanced Random Forest, XGBoost, and the rule-based baseline.
+```
+.
+├── dashboard.py                   # Streamlit page router (14 narrative sections)
+├── app.py                         # Thin wrapper — `streamlit run app.py` also works
+├── dashboard_helpers.py           # Loaders, ROC math, formatters, missing-artifact notice
+├── dashboard_explanations.py      # All long-form explanations + metric glossary
+├── dashboard_visuals.py           # Chart builders + interpretation-box + regime badge
+├── interpretation_engine.py       # Regime classifier + signal confirmation + research story
+│
+├── config.py                      # Bubble definitions, AI leaders, FRED series, paths
+├── data_ingestion.py              # yfinance + FRED + SEC EDGAR ingestion
+├── feature_engineering.py         # Technicals, returns, drawdowns, macro features
+├── bubble_signals.py              # Rule-based warning/recovery scores + phase labels
+├── backtesting.py                 # Strategy simulator (used by Investment Simulator page)
+├── ml_dataset.py                  # Weekly ML dataset + segment-adjusted `burst_6m_segment`
+├── model_training.py              # Trains LR, Elastic Net LR, RF, Balanced RF, XGBoost
+├── rare_event_analysis.py         # Top-k lift, percentile buckets, rare-event calibration
+├── imbalance_experiments.py       # Balanced RF / SMOTE / SMOTE-ENN stress tests
+├── event_validation.py            # Leave-one-crisis-style event validation
+├── cost_threshold_analysis.py     # Cost-ratio threshold stress tests
+├── firth_logistic_export.py       # Exports clean CSVs for optional R Firth-logistic
+├── firth_logistic_optional.R      # Optional R script — Firth logistic benchmark
+├── hazard_model.py                # 4-week onset model + leakage audit
+├── poisson_count_model.py         # Segment-level Poisson count regression
+├── ml_inference.py                # Scores current AI-exposed assets with trained models
+├── model_evaluation.py            # Final research-story / written summaries
+├── sec_fundamentals.py            # Standalone SEC EDGAR refresh utility
+│
+├── data/                          # Generated — git-ignored
+│   ├── raw/                       #   raw downloads
+│   ├── processed/                 #   parquet artifacts consumed by the dashboard
+│   └── bubble_dashboard.duckdb    #   optional DuckDB layer
+├── models/                        # Generated — git-ignored — trained .pkl models
+├── logs/                          # Generated — git-ignored
+├── reports/                       # Generated markdown research summaries (tracked)
+├── requirements.txt
+├── .env.example                   # Template for SEC_USER_AGENT and optional API keys
+└── README.md                      # This file
+```
 
-- `rare_event_analysis.py`
+## 6. Full pipeline run order
 
-Adds rare-event threshold tuning, risk buckets, calibration curves, and top-5% / top-10% lift analysis.
-
-- `imbalance_experiments.py`
-
-Tests imbalance-specific methods such as Balanced Random Forest, SMOTE, and SMOTE-ENN.
-
-- `event_validation.py`
-
-Runs event-level / leave-one-crisis-style validation to test whether models generalize across major historical market episodes.
-
-- `cost_threshold_analysis.py`
-
-Tests threshold choices under different false-positive and false-negative cost assumptions.
-
-- `firth_logistic_export.py`
-
-Exports datasets for optional Firth Logistic Regression benchmarking in R.
-
-- `hazard_model.py`
-
-Trains the discrete-time hazard/onset model and performs leakage auditing.
-
-- `poisson_count_model.py`
-
-Trains the segment-level Poisson count model for estimating how many assets in a segment may enter major drawdown conditions.
-
-- `ml_inference.py`
-
-Scores the latest/current AI-exposed assets using the trained models.
-
-- `model_evaluation.py`
-
-Creates final model summaries, dashboard conclusions, interpretation tables, and research-story outputs.
-
-- `dashboard.py`
-
-Launches the Streamlit dashboard.
-
-
-
-## Quickstart
+Run from the project folder, in this order (each script consumes outputs from the previous step):
 
 ```bash
-py -3.12 -m venv .venv_v12
-
- or 
- 
-python -m venv .venv  (if py doesn't work)
- 
-.\.venv_v12\Scripts\Activate.ps1 
- 
-  or
- 
-.venv\Scripts\Activate.ps1     # Windows PowerShell
-
-# source .venv/bin/activate     # macOS/Linux
-
-
-pip install -r requirements.txt
-
 python data_ingestion.py
 python feature_engineering.py
 python bubble_signals.py
@@ -111,296 +114,169 @@ python model_evaluation.py
 streamlit run dashboard.py
 ```
 
-
-## Machine Learning Crash-Risk Layer
-
-The machine-learning layer turns the dashboard into a supervised historical risk-modeling project. It does **not** predict the exact date of a bubble burst. It estimates whether current weekly conditions resemble historical conditions that were followed by a major forward drawdown.
-
-Primary target:
-
-```text
-burst_6m = 1 if the asset falls at least 30% from the current weekly close at any point over the next 26 weekly observations; otherwise 0.
-```
-
-Optional targets created by `ml_dataset.py`:
-
-- `burst_3m`: 20% or worse forward drawdown within 13 weeks.
-- `burst_6m`: 30% or worse forward drawdown within 26 weeks.
-- `burst_12m`: 40% or worse forward drawdown within 52 weeks.
-
-Models compared:
-
-1. Rule-based baseline using `warning_score`.
-2. Logistic Regression as the interpretable GLM-style baseline.
-3. Elastic Net Logistic Regression as a sparse/shrinkage linear benchmark.
-4. Random Forest Classifier for nonlinear threshold interactions.
-5. XGBoost Classifier for boosted-tree tabular modeling.
-
-The model uses a chronological train/validation/test split rather than random splitting. Random splitting would leak future market regimes into training and overstate performance. Current AI-cycle rows are treated as inference/monitoring rows when their future six-month outcomes are not fully known.
-
-Run the ML pipeline after the existing data/signals pipeline:
+Optional / standalone:
 
 ```bash
-python ml_dataset.py
-python model_training.py
-python model_evaluation.py
-python ml_inference.py
-streamlit run dashboard.py
+python sec_fundamentals.py     # Refresh SEC EDGAR fundamentals only
 ```
 
-Outputs:
+Primary dashboard entrypoint:
 
-- `data/processed/ml_burst_dataset.parquet`
-- `data/processed/ml_model_results.parquet`
-- `data/processed/ml_test_predictions.parquet`
-- `data/processed/ml_feature_importance.parquet`
-- `data/processed/ml_thresholds.parquet`
-- `data/processed/ml_top_decile_analysis.parquet`
-- `data/processed/ml_calibration_table.parquet`
-- `data/processed/ml_dashboard_conclusions.parquet`
-- `data/processed/current_ai_ml_risk_scores.parquet`
-- `reports/ml_model_summary.md`
-- trained model files under `models/`
+```bash
+streamlit run dashboard.py
+# or (equivalent)
+streamlit run app.py
+```
 
-Interpretation rule:
+A future, optional second-pass experiment (`python feature_transformation_experiments.py`) is **not yet implemented** in this branch and will be added in a separate Phase 8 commit. When added, the recommended position is **after `python model_training.py`**.
 
-A high ML score means the current feature pattern historically appeared before large forward drawdowns more often than normal. It does **not** mean a crash is guaranteed, and it is not financial advice.
+## 7. Virtual environment setup
 
+Python 3.12 recommended:
 
-### v7 ML upgrades
+```bash
+py -3.12 -m venv .venv_v16
+.venv_v16\Scripts\activate          # Windows PowerShell: .\.venv_v16\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-The ML layer now includes the requested second-pass improvements:
+## 8. `.env` setup for SEC EDGAR access
 
-- **Top-decile risk analysis:** shows what happened historically when a model ranked a row in its highest-risk 10% of scores.
-- **Tuned thresholds:** models no longer use `0.50` as the automatic warning cutoff. Each threshold is selected on validation data by maximizing F1, then applied to the later test split.
-- **SEC valuation features:** run `data_ingestion.py` without `--skip-sec` to activate filing-date-aware SEC valuation features where EDGAR concepts are available.
-- **Expanded ticker universe:** the default project universe now includes more dot-com, AI/semi, financial/housing, commodity, and speculative growth tickers. Some delisted/unavailable symbols will be logged and skipped.
-- **Separate model scopes:** the project trains a global model and, when enough labeled rows exist, separate models for broad index/ETF, mega-cap AI/tech, and speculative/high-volatility assets.
-- **Calibration tables:** the dashboard compares predicted probability bins with empirical event rates, so you can see whether a 20% predicted risk behaves like roughly 20% historically.
-- **Explicit dashboard conclusion:** the ML page now identifies best ROC-AUC, best PR-AUC, best recall, best precision, and whether the model strength is strong, weak, or still experimental.
+SEC EDGAR requires a user-agent string identifying your tool and contact email. Copy `.env.example` to `.env` and edit:
 
-
-## New dashboard pages in this version
-- **Research Story & Interpretation**: dynamic narrative interpretation of the saved results, including whether the model story is meaningful or weak.
-
-- **ML Visual Diagnostics**: all confusion matrices, ROC-AUC curve views, and false-positive audit visuals.
-- **EDA Visuals**: target balance, segment balance, distributions, correlations, and missingness charts.
-- **Feature Importance Visuals**: ranked bars, signed coefficient plots, heatmaps, cumulative-importance charts, and feature-theme summaries.
-- **Methods, Diagrams, and Formula Walkthrough**: process diagrams, script flow, label construction, and metric explanations.
-- **Background Research and Literature Review**: a curated list of bubble/crisis/financial-ML references.
-
-## SEC EDGAR setup
-
-The project now pulls historical valuation rows from SEC EDGAR companyfacts for eligible corporate tickers. Set a polite identifiable user agent in `.env`:
-
-```text
-SEC_USER_AGENT="EconomicBubbleDashboard/1.0 your.email@example.com"
+```dotenv
+SEC_USER_AGENT=EconomicBubbleDashboard/1.0 your_email@example.com
 SEC_REQUEST_PAUSE_SECONDS=0.25
+# Optional:
+FRED_API_KEY=
+FMP_API_KEY=
 ```
 
-The code caches SEC companyfacts JSON under `data/processed/sec_companyfacts_cache/`, so repeated runs do not hammer SEC servers.
+The dashboard will load the file via `python-dotenv` at startup.
 
-If you only want to debug price/macro ingestion, you can skip SEC temporarily:
+## 9. Generated folders ignored by Git
 
-```bash
-python data_ingestion.py --skip-sec
-```
+The repository ships **only the code and the small markdown reports**. Everything below is generated locally and excluded from version control:
 
-For a focused SEC valuation refresh after prices already exist:
+| Path                              | Generated by                        | Why ignored |
+|-----------------------------------|-------------------------------------|-------------|
+| `data/raw/`                       | `data_ingestion.py`, `sec_fundamentals.py` | Large, regenerable, may contain dated upstream snapshots |
+| `data/processed/`                 | the rest of the pipeline            | Tens of parquets, large, regenerable |
+| `data/bubble_dashboard.duckdb`    | `data_ingestion.py` and friends     | Local SQL convenience |
+| `models/`                         | `model_training.py`, `hazard_model.py`, etc. | Pickle binaries |
+| `logs/`                           | every script                        | Run-time logs |
+| `.venv*/`, `__pycache__/`, `.env` | local                                | Environment / secrets |
 
-```bash
-python sec_fundamentals.py --tickers NVDA MSFT AMD AVGO PLTR META GOOGL AMZN --refresh
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python model_evaluation.py
-python ml_inference.py
-streamlit run dashboard.py
-```
+If you clone this repo on a new machine, you will see a clean tree with only source files. Run the pipeline above to populate `data/processed/`, `models/`, and `reports/`.
 
-## Optional FRED API key
+## 10. Dashboard tab guide
 
-The default pipeline fetches FRED data through public CSV endpoints, so a FRED key is not required. If you later add `fredapi`, create a `.env` file:
+The sidebar follows a narrative flow of 14 numbered sections:
 
-```text
-FRED_API_KEY=your_key_here
-```
+| # | Section | Purpose |
+|---|---|---|
+| 1 | **Executive Summary** | Top-line story, key findings drawn from `ml_dashboard_conclusions.parquet`, supporting tables, project disclaimer. |
+| 2 | **Data Overview & EDA** | Row counts, date coverage, ticker coverage, segment distribution, target balance, distributions, correlation heatmap, missingness. |
+| 3 | **Bubble Explorer** | Per-ticker price + SMAs + rule-based exit/re-entry markers, drawdown, RSI, macro overlay. Includes the regime badge. |
+| 4 | **Historical Bubble Comparison** | Normalized price paths aligned by retrospective peak across selected bubbles. |
+| 5 | **Bubble Vital Signs** | Single-asset scorecard (warning/recovery/drawdown/RSI/volatility/momentum) with regime badge and SEC valuation history. |
+| 6 | **Current AI Cycle Monitor** | Cross-signal confirmation table, rule-based monitor, momentum heatmap, latest SEC valuation rows for AI leaders. |
+| 7 | **Machine Learning Model Lab** | Best-by-metric cards; model comparison; top-decile risk; thresholds & calibration; confusion matrices; ROC; FP audit; feature importance; plain-English summary. |
+| 8 | **Rare Event & Imbalance Lab** | Rare-event thresholds + metrics; percentile risk buckets; top-5/10% lift; rare-event calibration; SMOTE / Balanced RF experiments; cost-threshold stress test. |
+| 9 | **Event-Level Validation** | PR-AUC per historical regime trained-before / tested-on the regime window. |
+| 10 | **Hazard & Poisson Models** | 4-week hazard with full + restricted feature sets + leakage audit; segment-level Poisson count. |
+| 11 | **Investment / Strategy Simulator** | Buy-and-hold vs rule-based exit/re-entry strategies. Backtest only. |
+| 12 | **Methods & Diagrams** | Pipeline Sankey, label construction, threshold + metric formulas, signal-combination logic. |
+| 13 | **Literature / Background Research** | Curated reference list — bubbles, crashes, asset pricing, ML caveats, rare-event modelling. |
+| 14 | **Data Quality & Limitations** | Survivorship bias, SEC mapping risk, macro frequency mismatch, false positives/negatives, model uncertainty, table-by-table check. |
 
-Get a key from FRED's API page.
+Every chart on every page is followed by an **interpretation box** with four parts: what the chart shows, how to read it, what the current result suggests, and what *not* to overclaim.
 
-## Faster test run
+## 11. Model explanation summary
 
-```bash
-python data_ingestion.py --start 1995-01-01 --tickers QQQ ^IXIC CSCO INTC MSFT AMZN NVDA AMD AVGO PLTR SMH SOXX SPY XLF XHB BTC-USD ETH-USD ARKK
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python model_evaluation.py
-python ml_inference.py
-streamlit run dashboard.py
-```
+The project includes several model families because the "best" depends on the decision goal:
 
-## Notes
+| Family | Type | Where it tends to lead |
+|---|---|---|
+| **Rule-Based Warning Score** | Hand-crafted scorecard | Highest precision on `broad_index_etf`. Transparent — you can read the rule that fired. |
+| **Logistic Regression** | Linear classifier | Usually the strongest broad risk-ranker by ROC-AUC and PR-AUC on `global`. |
+| **Elastic Net Logistic** | Regularized linear | Best recall on `mega_cap_ai_tech` in current runs; better feature selection. |
+| **Random Forest** | Tree ensemble | Captures non-linear interactions but rarely dominates here. |
+| **Balanced Random Forest** | Class-balanced bootstraps | Useful for top-risk bucket detection in AI/tech and speculative segments. |
+| **XGBoost** | Gradient-boosted trees | Strong benchmark; included to demonstrate it does *not* automatically win on this data. |
+| **Firth Logistic (optional, R)** | Penalized logistic | Useful for small-sample / separation-prone configurations. |
+| **Discrete-time Hazard** | Event-onset | Asks 'did the asset enter a major drawdown state within the next 4 weeks?' — requires the leakage audit. |
+| **Poisson Count** | Count regression | Estimates *how many* assets in a segment may experience a drawdown; currently experimental. |
 
-- Delisted tickers such as Yahoo/AOL may fail through free APIs. The ingestion script logs and skips unavailable symbols.
-- SEC valuation rows are filing-date-aware and designed to reduce look-ahead bias.
-- Current yfinance valuation snapshots are stored separately as current context only, not as historical evidence.
-- Retrospective peak strategies are hindsight benchmarks, not live trading signals.
+**Why no neural network is central.** The bottleneck is not model capacity — it is data scarcity (few independent crises), non-stationarity, and label noise. A deep model would over-fit unless validation is much stricter than row-level chronological splits.
 
-## v12 Rare-Event Upgrade
+## 12. Interpretation of metrics
 
-This version adds a rare-event modeling layer on top of the existing crash-risk ML system.
+Every metric used in the dashboard has a glossary entry inside the app (see the **Methods & Diagrams → Thresholds & metrics** tab, and the "📐 Metric glossary" expander on the ML Lab page). Headline reminders:
 
-### What changed
+- **PR-AUC** matters more than ROC-AUC when positive events are rare.
+- **Accuracy** is misleading when the positive class is under 10% of rows.
+- **MCC** is the most imbalance-robust headline metric.
+- **Top-5% / Top-10% lift** is often more decision-useful than any binary metric.
+- **False positives per true positive** is the honesty meter for alert systems.
+- **Empirical bucket event rate** should be quoted instead of the raw model probability when calibration is imperfect.
 
-1. **Models preserved:** Logistic Regression, Random Forest, and XGBoost remain the main row-level classifiers.
-2. **Stricter threshold tuning:** `rare_event_analysis.py` applies minimum precision constraints and maximum alert-rate guards so a model cannot look good merely by predicting almost everything as risky.
-3. **Percentile risk buckets:** the dashboard now evaluates Bottom 50%, 50-75%, 75-90%, 90-95%, and Top 5% risk buckets.
-4. **Calibration:** validation-bin empirical event rates are used to create calibrated probability estimates and reliability curves.
-5. **Top-decile and top-5% lift:** the dashboard now shows whether the highest-risk 10% and 5% of model scores contain more realized future drawdowns than the base event rate.
-6. **Segment-specific targets:** the dataset now keeps the original uniform targets and adds segment-adjusted targets. The main ML training target is now `burst_6m_segment`:
-   - broad indexes/ETFs: 20% six-month forward drawdown threshold
-   - mega-cap AI/tech: 30% six-month forward drawdown threshold
-   - speculative/high-volatility assets: 50% six-month forward drawdown threshold
-   - other single names: 30% six-month forward drawdown threshold
-7. **Discrete-time hazard model:** `hazard_model.py` models whether an asset enters a segment-adjusted major-drawdown state within the next four weeks.
-8. **Poisson count model:** `poisson_count_model.py` is separate from the binary classifier and models the number of assets in a segment that later experience major drawdowns.
+## 13. Current key findings
 
-### Full v12 run order
+Findings change with each pipeline re-run, but the general pattern is:
 
-```powershell
-python data_ingestion.py
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python rare_event_analysis.py
-python model_evaluation.py
-python hazard_model.py
-python poisson_count_model.py
-python ml_inference.py
-streamlit run dashboard.py
-```
+1. **Logistic Regression / `global`** is usually the most stable broad risk-ranker by ROC-AUC and PR-AUC.
+2. **Elastic Net Logistic / `mega_cap_ai_tech`** shows the best recall in the AI / mega-cap segment.
+3. **Rule-Based Warning Score / `broad_index_etf`** often shows the best precision (cleanest alerts).
+4. **Balanced Random Forest** helps top-risk bucket detection in some AI/tech and speculative segments.
+5. **XGBoost** is competitive as a benchmark but does not dominate.
+6. **Top-bucket lift** is often the clearest evidence — empirical event rates rise from bottom to top buckets when the model is doing useful work.
+7. **Calibration is imperfect.** Raw scores should be treated as resemblance scores, not literal probabilities. Prefer the empirical bucket event rate.
+8. **Hazard model** looks unusually strong before the leakage audit and noticeably weaker after — use the **restricted** hazard score.
+9. **Poisson count model** is conceptually useful but currently experimental; do not overclaim.
+10. **"Best model"** depends on the decision goal — see the in-app "🏆 Which model is best?" expander.
 
-### Fast first run without SEC valuation
+## 14. Limitations
 
-```powershell
-python data_ingestion.py --tickers QQQ SPY NVDA MSFT AMD AVGO PLTR META GOOGL AMZN AAPL TSM ASML MU LRCX KLAC SMH SOXX BTC-USD ETH-USD ARKK TSLA COIN ROKU ZM SHOP XLF XHB JPM BAC C AIG --skip-sec
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python rare_event_analysis.py
-python model_evaluation.py
-python hazard_model.py
-python poisson_count_model.py
-python ml_inference.py
-streamlit run dashboard.py
-```
+- **Few independent crises.** Even with hundreds of thousands of rows, only ~5–10 distinct historical crisis regimes are usable. Most positive rows are correlated neighbors of the same event.
+- **Survivorship bias.** Delisted names (Lehman, Bear Stearns, many SPACs) may be missing.
+- **SEC valuation mapping risk.** XBRL concepts differ by company and era — coverage is partial.
+- **Macro frequency mismatch.** Daily prices vs quarterly GDP vs monthly CPI; resampling can hide leading/lagging behaviour.
+- **Non-stationarity.** Features that worked in past crises (curve inversion, leverage, valuation extremes) may stop working when policy or market structure changes.
+- **Calibration drift.** Raw probabilities should not be treated as literal forecasts.
+- **No exact top/bottom detection.** This dashboard tests rules and ranks resemblance; it does not promise timing.
 
-### How to interpret v12
+## 15. Future improvements
 
-The dashboard should be treated as a **historical risk-ranking research tool**, not a prediction machine. The most important outputs are PR-AUC, calibration, top-10% lift, top-5% lift, and risk-bucket event rates. A high score means the current pattern resembles historical higher-risk setups. It does not mean a crash will occur.
+- Optional **`feature_transformation_experiments.py`** (Phase 8, separate branch): controlled experiment testing log/signed-log transforms, winsorization, rolling z-scores by ticker, percentile ranks, economically meaningful interactions, regime-adjusted features, volatility-adjusted returns, and drawdown-state flags — all with strict no-look-ahead discipline.
+- Richer event-level validation with bootstrapped confidence intervals.
+- A second R-language benchmark using `survival` for the hazard layer.
+- Expanded SEC coverage via fallback XBRL concept maps.
+- Optional fine-tuned text sentiment features for the AI-cycle monitor.
 
-## v13 Rare-Event Robustness Upgrade
+## 16. Optional transformed-feature experiment (planned, not yet implemented)
 
-This version adds one final rare-event modeling audit layer on top of the v12 architecture.
+To be added in a later commit as `feature_transformation_experiments.py`. Goals (per the project specification):
 
-### What is new
+- Test economically meaningful transformations (log / signed-log, winsorization, rolling z-scores by ticker, percentile ranks, interactions, regime-adjusted features, volatility-adjusted returns, drawdown-state flags).
+- Fit the same model families on transformed features without overwriting baseline artifacts.
+- Save outputs separately:
+  - `data/processed/transformed_feature_model_results.parquet`
+  - `data/processed/transformed_feature_predictions.parquet`
+  - `data/processed/transformed_feature_importance.parquet`
+  - `reports/transformed_feature_experiment_summary.md`
+- Compare baseline vs transformed on: PR-AUC, ROC-AUC, MCC, top-5/10% lift, calibration, false-positive burden, and event-level validation.
+- Keep the framing honest: "Transformations may improve feature geometry and make patterns easier for models to learn, but they do not create new independent historical bubbles."
 
-- **MCC and false-positive burden metrics** in model results so high recall cannot hide oceans of false alarms.
-- **Balanced Random Forest** added to the main model set when `imbalanced-learn` is installed.
-- **Controlled imbalance experiments** in `imbalance_experiments.py`:
-  - Balanced Random Forest
-  - SMOTE + Logistic Regression
-  - SMOTE + Random Forest
-  - SMOTE-ENN + Logistic Regression
-  - SMOTE-ENN + Random Forest
-- **Event-level validation** in `event_validation.py`, which tests pre-event/event windows such as dot-com, the global financial crisis, COVID crash, and 2021 speculative-tech unwind.
-- **Cost-ratio threshold stress testing** in `cost_threshold_analysis.py`, which evaluates what happens when false negatives are treated as 2x, 5x, 10x, or 20x as costly as false positives.
-- **Optional Firth logistic regression export** in `firth_logistic_export.py` plus `firth_logistic_optional.R` for users who want a statistical rare-event logistic benchmark in R.
+This experiment is **deferred** until the dashboard refactor and bug-fix phases are stable.
 
-### Full run order
+---
 
-```powershell
-python data_ingestion.py
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python rare_event_analysis.py
-python imbalance_experiments.py
-python event_validation.py
-python cost_threshold_analysis.py
-python firth_logistic_export.py
-python model_evaluation.py
-python hazard_model.py
-python poisson_count_model.py
-python ml_inference.py
-streamlit run dashboard.py
-```
+## Quick links
 
-### Interpretation rule
-
-Do **not** keep a method simply because it increases recall. Keep it only if it improves several hard-to-fake metrics:
-
-- PR-AUC
-- MCC
-- top-5% and top-10% lift
-- false positives per true positive
-- calibration / reliability
-- event-level validation behavior
-
-The goal is not to make the model look better. The goal is to make the model harder to fool.
-
-
-## v14 Signal-Confirmation and Reliability Fixes
-
-v14 fixes several dashboard and modeling issues discovered during the v13 review:
-
-- Fixes the dashboard `KeyError: 'burst_6m'` by automatically selecting `burst_6m_segment`, `burst_6m`, `target`, or `y_true` depending on the artifact.
-- Replaces the misleading stacked risk-bucket bar chart with a line chart so model event rates are not visually added together.
-- Adds a hazard-model leakage audit. `hazard_model.py` now trains both `full_features` and `restricted_no_state_features`. The restricted model removes target-adjacent state variables such as `drawdown_pct`, `distance_from_200dma`, `zscore_price`, `warning_score`, and `recovery_score`.
-- Stops treating raw model scores as literal probabilities. The dashboard now emphasizes empirical bucket event rates, top-risk lift, and risk percentiles.
-- Reframes the ML page as a signal-confirmation and risk-ranking lab rather than a binary crash prediction page.
-
-### Recommended v14 run order
-
-```powershell
-python data_ingestion.py
-python feature_engineering.py
-python bubble_signals.py
-python ml_dataset.py
-python model_training.py
-python rare_event_analysis.py
-python imbalance_experiments.py
-python event_validation.py
-python cost_threshold_analysis.py
-python firth_logistic_export.py
-python hazard_model.py
-python poisson_count_model.py
-python ml_inference.py
-python model_evaluation.py
-streamlit run dashboard.py
-```
-
-`model_evaluation.py` is intentionally near the end so the final written interpretation can see the outputs from the rare-event, imbalance, event-validation, hazard, Poisson, and inference modules.
-
-### v14 interpretation rule
-
-Use the dashboard as a **historical signal-confirmation and risk-ranking system**. The strongest evidence is cross-signal agreement plus top-5%/top-10% lift and event-level validation. Do not interpret raw model scores as literal probabilities unless the calibration curve supports that interpretation.
-
-## v16 interpretation and diagnostics patch
-
-This version fixes a NumPy 2.x compatibility issue in the ROC visual diagnostics page by replacing the deprecated/removed `np.trapz` call with `np.trapezoid`.
-
-It also adds a new dashboard page:
-
-- **Research Story & Interpretation**: a dynamic narrative page that reads the saved model artifacts and explains whether there is a real story in the results. It summarizes top-risk bucket lift, ordinary model comparison, imbalance experiments, current AI empirical-risk rankings, hazard leakage audit findings, Poisson count model reliability, cost-threshold tradeoffs, and feature-importance themes.
-
-The lift charts were also changed to grouped bars instead of stacked bars because lift values do not add across scopes or top-k buckets.
-
-
-
+- **Run the dashboard:** `streamlit run dashboard.py`
+- **Project disclaimer:** see `dashboard_explanations.PROJECT_DISCLAIMER` (rendered on the Executive Summary page).
+- **Regime badge logic:** see `interpretation_engine.classify_regime_badge`.
+- **Signal confirmation logic:** see `interpretation_engine.build_signal_confirmation_table`.
+- **Metric glossary:** see `dashboard_explanations.METRIC_GLOSSARY`.
