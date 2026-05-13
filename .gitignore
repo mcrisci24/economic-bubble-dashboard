@@ -1,0 +1,53 @@
+# Virtual environments
+.venv/
+.venv_*/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Generated data outputs
+data/
+*.parquet
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.duckdb
+
+# Trained model artifacts
+models/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+
+# Local reports generated from runs
+reports/*.html
+reports/*.pdf
+
+# IDE / OS / local history
+.idea/
+.vscode/
+.Rhistory
+.DS_Store
+Thumbs.db
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
