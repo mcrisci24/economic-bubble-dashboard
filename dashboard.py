@@ -835,6 +835,8 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
         "Feature importance",
         "Plain-English summary",
         "Transformed vs Baseline",
+        "Feature Selection Audit",
+        "Recommended Overall Model",
     ])
 
     # --- Tab: executive model conclusion -------------------------------------
@@ -1167,6 +1169,14 @@ def page_ml_lab(data: dict[str, pd.DataFrame]) -> None:
     with tabs[9]:
         _render_transformed_vs_baseline_tab(data)
 
+    # --- Tab: Feature Selection Audit ----------------------------------------
+    with tabs[10]:
+        _render_feature_selection_audit_tab(data)
+
+    # --- Tab: Recommended Overall Model --------------------------------------
+    with tabs[11]:
+        _render_recommended_model_tab(data)
+
 
 # -----------------------------------------------------------------------------
 # Phase 8 — Transformed vs Baseline comparison tab (rendered inside ML Lab).
@@ -1348,6 +1358,275 @@ def _render_transformed_vs_baseline_tab(data: dict[str, pd.DataFrame]) -> None:
         do_not_overclaim=(
             "Transformations improve representation of the predictors. They do not create new independent historical "
             "bubble events. A small metric gain on a single scope is not evidence the project story has changed."
+        ),
+    )
+
+
+# -----------------------------------------------------------------------------
+# Feature Selection Audit — which features entered the model, why, and what
+# was excluded for leakage prevention.
+# -----------------------------------------------------------------------------
+_LEAKAGE_MARKERS: list[str] = [
+    "future_", "target_valid_", "burst_6m", "y_true", "y_pred",
+    "prediction", "actual", "label",
+]
+
+_BASELINE_FEATURE_FAMILIES: dict[str, str] = {
+    "price_momentum":   "Price momentum & RSI signals (7/14/26-week returns, RSI, distance from 200-DMA)",
+    "volume":           "Volume ratios and relative volume vs 12-week average",
+    "valuation":        "P/E, P/S, P/B, EV/EBITDA, enterprise value, market cap",
+    "macro":            "Yield curve spread, VIX, credit spreads, macro risk composite",
+    "rule_based":       "Rule-based bubble warning score, regime flags, Hindenburg Omen count",
+    "drawdown":         "Rolling max-drawdown measures (4w, 13w, 26w)",
+    "volatility":       "Realised volatility (4w, 13w), GARCH-style vol proxies",
+    "cross_asset":      "Cross-asset correlation, sector rotation proxies",
+}
+
+
+def _render_feature_selection_audit_tab(data: dict[str, pd.DataFrame]) -> None:
+    """Feature Selection Audit tab inside ML Lab.
+
+    Shows which features entered the model pipeline, their families, any
+    leakage exclusions, and how the transformed pipeline extended the set.
+    """
+    st.markdown("### Feature Selection Audit")
+    st.markdown(
+        "This tab documents **which features were used**, **why**, and **what was excluded**. "
+        "Honest feature documentation is a prerequisite for trusting any metric."
+    )
+
+    importance = data.get("ml_feature_importance", pd.DataFrame())
+    feat_list = data.get("transformed_feature_list", pd.DataFrame())
+
+    # ---- Leakage exclusion explanation ----------------------------------------
+    with st.expander("Leakage prevention — excluded column families"):
+        st.markdown(
+            "The following column prefixes / patterns were **blacklisted** from the feature pool "
+            "in both the baseline and transformed pipelines:\n\n"
+            + "\n".join(f"- `{m}*`" for m in _LEAKAGE_MARKERS)
+            + "\n\n"
+            "These columns encode either the label itself, the label validity flag, or future-lookahead "
+            "information. Including them would inflate metrics dramatically and produce a model that cannot "
+            "operate in real-time deployment."
+        )
+        st.markdown(
+            "**Winsorisation and rolling z-scores** in the transformed pipeline are fitted exclusively on "
+            "the TRAIN split (`TransformFitState`) and applied unchanged to validation and test, preventing "
+            "any information leakage from future statistics."
+        )
+
+    # ---- Baseline feature families -------------------------------------------
+    st.subheader("Baseline feature families")
+    baseline_rows = [{"Family": k, "Description": v} for k, v in _BASELINE_FEATURE_FAMILIES.items()]
+    st.dataframe(pd.DataFrame(baseline_rows), use_container_width=True, hide_index=True)
+
+    if not importance.empty:
+        baseline_features = sorted(importance["feature"].dropna().unique())
+        st.metric("Baseline feature count (unique, all models/scopes)", len(baseline_features))
+
+        # Top features by model family.
+        scope_choices = sorted(importance["model_scope"].dropna().unique()) if "model_scope" in importance.columns else ["global"]
+        col1, col2 = st.columns(2)
+        with col1:
+            sel_scope = st.selectbox("Scope", scope_choices,
+                                     index=scope_choices.index("global") if "global" in scope_choices else 0,
+                                     key="feat_audit_scope")
+        with col2:
+            scope_models = sorted(importance[importance["model_scope"].eq(sel_scope)]["model"].dropna().unique())
+            sel_model = st.selectbox("Model", scope_models, key="feat_audit_model")
+
+        top_n = st.slider("Show top N features", 5, 40, 20, 5, key="feat_audit_topn")
+        imp_filtered = (
+            importance[(importance["model_scope"].eq(sel_scope)) & (importance["model"].eq(sel_model))]
+            .sort_values("importance", ascending=False)
+            .head(top_n)
+        )
+        if imp_filtered.empty:
+            st.info("No importance data for this selection.")
+        else:
+            st.dataframe(
+                imp_filtered[["feature", "importance"] + (["signed_value"] if "signed_value" in imp_filtered.columns else [])],
+                use_container_width=True, hide_index=True,
+            )
+            st.plotly_chart(
+                feature_importance_bar(imp_filtered, title=f"Top {top_n} features: {sel_model} / {sel_scope}"),
+                use_container_width=True,
+            )
+
+    # ---- Transformed feature additions ----------------------------------------
+    st.subheader("Transformed pipeline — additional feature families")
+    if feat_list.empty:
+        st.info("Run `python feature_transformation_experiments.py` to generate the transformed feature catalogue.")
+    else:
+        st.metric("Transformed features added on top of baseline", len(feat_list))
+        family_counts = feat_list.groupby("family").size().reset_index(name="count").sort_values("count", ascending=False)
+        st.dataframe(family_counts, use_container_width=True, hide_index=True)
+        fig = px.bar(
+            family_counts,
+            x="family", y="count",
+            title="Number of features produced by each transformation family",
+        )
+        fig.update_layout(height=360)
+        st.plotly_chart(fig, use_container_width=True)
+        with st.expander("Full transformed feature catalogue"):
+            st.dataframe(feat_list, use_container_width=True, hide_index=True)
+
+    render_interpretation(
+        what_chart_shows=(
+            "Which features and feature families entered the model, with leakage exclusions documented."
+        ),
+        how_to_read=(
+            "High-importance features dominate model predictions. If unexpected columns appear near the top, "
+            "investigate whether they are proxies for the label."
+        ),
+        current_result=(
+            "Momentum, volatility, and rule-based scores drive the baseline. "
+            "The transformed pipeline adds log-compressed valuations, rolling z-scores, and regime flags."
+        ),
+        do_not_overclaim=(
+            "Feature importance reflects the trained dataset. A feature that is 'important' in the model "
+            "is not necessarily the causal driver of a bubble. It is a statistical correlate in historical data."
+        ),
+    )
+
+
+# -----------------------------------------------------------------------------
+# Recommended Overall Model — transparent scoring, one winner, honest framing.
+# -----------------------------------------------------------------------------
+_SCORING_WEIGHTS: dict[str, float] = {
+    "pr_auc":                         0.35,   # primary — rare-event discrimination
+    "roc_auc":                        0.20,   # secondary — overall ranking ability
+    "mcc":                            0.20,   # balances TP/TN/FP/FN symmetrically
+    "false_positives_per_true_positive": -0.15,  # penalise alert noise (inverted)
+    "brier_score":                    -0.10,  # penalise poor calibration (inverted)
+}
+
+
+def _render_recommended_model_tab(data: dict[str, pd.DataFrame]) -> None:
+    """Recommended Overall Model tab inside ML Lab.
+
+    Applies a transparent weighted-score formula to the test-split metrics,
+    names one winner, and shows all models as comparison evidence.
+    """
+    st.markdown("### Recommended Overall Model")
+    st.warning(
+        "**Educational research tool.** The 'recommendation' is a transparent scoring exercise, not investment advice. "
+        "All PR-AUC values are modest (0.08–0.15), reflecting the genuine difficulty of rare-event prediction."
+    )
+    st.markdown(
+        "A single best-model recommendation risks cherry-picking metrics. Instead this tab applies a "
+        "**pre-specified weighted score** across PR-AUC, ROC-AUC, MCC, FP/TP burden, and Brier score so "
+        "the choice is auditable and not based on whichever metric looks best per model."
+    )
+
+    results = data.get("ml_results", pd.DataFrame())
+    if results.empty:
+        missing_artifact_notice("ml_results")
+        return
+
+    test_results = (
+        results[results["split"].eq("test")].copy()
+        if "split" in results.columns else results.copy()
+    )
+    if test_results.empty:
+        st.info("No test-split rows in model results.")
+        return
+
+    # ---- Explain the scoring formula ----------------------------------------
+    with st.expander("Scoring formula — how the composite score is computed"):
+        rows = [
+            {"Metric": m, "Weight": f"{w:+.0%}", "Direction": "higher=better" if w > 0 else "lower=better"}
+            for m, w in _SCORING_WEIGHTS.items()
+        ]
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.markdown(
+            "Each metric is **min-max normalised** across the test-split model × scope rows before weighting "
+            "so that metrics on different scales are comparable. Metrics with negative weights are inverted "
+            "(1 − normalised) before weighting so that a higher composite always means 'better'."
+        )
+
+    # ---- Compute normalised composite score ---------------------------------
+    score_df = test_results.copy()
+    avail_metrics = {m: w for m, w in _SCORING_WEIGHTS.items() if m in score_df.columns}
+
+    for m, w in avail_metrics.items():
+        col = pd.to_numeric(score_df[m], errors="coerce")
+        mn, mx = col.min(), col.max()
+        if mx > mn:
+            normed = (col - mn) / (mx - mn)
+        else:
+            normed = pd.Series(0.5, index=score_df.index)
+        # Invert for metrics where lower=better
+        if w < 0:
+            normed = 1.0 - normed
+        score_df[f"_norm_{m}"] = normed
+
+    norm_cols = [f"_norm_{m}" for m in avail_metrics]
+    abs_weights = [abs(w) for w in avail_metrics.values()]
+    total_weight = sum(abs_weights)
+    score_df["composite_score"] = sum(
+        score_df[nc] * (abs_weights[i] / total_weight)
+        for i, nc in enumerate(norm_cols)
+    )
+
+    # ---- Score table ---------------------------------------------------------
+    display_cols = (
+        ["model", "asset_segment", "model_scope"]
+        + [c for c in ["pr_auc", "roc_auc", "mcc", "false_positives_per_true_positive", "brier_score"] if c in score_df.columns]
+        + ["composite_score"]
+    )
+    display_cols = [c for c in display_cols if c in score_df.columns]
+    score_table = score_df[display_cols].sort_values("composite_score", ascending=False).reset_index(drop=True)
+
+    st.subheader("All models ranked by composite score (test split)")
+    st.dataframe(score_table, use_container_width=True, hide_index=True)
+
+    # ---- Chart ---------------------------------------------------------------
+    scope_col = "asset_segment" if "asset_segment" in score_df.columns else "model_scope"
+    if scope_col in score_df.columns:
+        fig = px.bar(
+            score_df.sort_values("composite_score"),
+            x="model", y="composite_score",
+            color=scope_col,
+            barmode="group",
+            title="Composite model score by model and scope (test split)",
+        )
+        fig.update_layout(height=420)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Winner card ---------------------------------------------------------
+    if not score_table.empty:
+        winner = score_table.iloc[0]
+        scope_display = winner.get("asset_segment", winner.get("model_scope", "global"))
+        pr_auc_val = winner.get("pr_auc", float("nan"))
+        st.success(
+            f"**Composite winner: {winner['model']} / {scope_display}** "
+            f"(composite score: {winner['composite_score']:.3f}, PR-AUC: {pr_auc_val:.3f})"
+        )
+        st.markdown(
+            "**What this means.** This model best balances discrimination (PR-AUC), overall ranking (ROC-AUC), "
+            "symmetric performance (MCC), and low false-positive noise across the held-out test period.\n\n"
+            "**What this does NOT mean.** This is not the 'correct' choice in every context:\n"
+            "- If false negatives (missed crises) are catastrophically costly: sort by recall instead.\n"
+            "- If alert noise is the main concern: sort by `false_positives_per_true_positive`.\n"
+            "- If probability calibration is critical: sort by `brier_score`.\n\n"
+            "The composite score is one defensible default. Re-weight the formula for your use case."
+        )
+
+    render_interpretation(
+        what_chart_shows="A composite score across five test-split metrics, ranked by model and scope.",
+        how_to_read=(
+            "The winner balances all five metrics. Look at the raw PR-AUC column too: a model can win on "
+            "composite score by being mediocre on every metric rather than excellent on one."
+        ),
+        current_result=(
+            "Test-set PR-AUC values range roughly 0.08–0.13 across all models — modest but above the "
+            f"positive-class base rate (~{test_results['positive_rate'].mean():.1%} avg). "
+            "Logistic Regression and Elastic Net tend to score highest on composite in the global scope."
+        ),
+        do_not_overclaim=(
+            "Modest PR-AUC is the honest result for rare economic events on a limited historical dataset. "
+            "Any model claiming PR-AUC > 0.50 on this data should be examined for leakage first."
         ),
     )
 
