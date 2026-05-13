@@ -1,641 +1,538 @@
-"""Build Economic Bubble Dashboard presentation with python-pptx.
+"""Build supervised ML project presentation with python-pptx.
 
 Run from the project root:
     python presentation/build_pptx.py
 """
 from __future__ import annotations
-import sys
 from pathlib import Path
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.chart.data import ChartData
-from pptx import Presentation
-from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 
 # ---------------------------------------------------------------------------
 # Palette
 # ---------------------------------------------------------------------------
-NAVY   = RGBColor(0x1E, 0x27, 0x61)   # dominant dark
-TEAL   = RGBColor(0x1C, 0x72, 0x93)   # secondary
-MINT   = RGBColor(0x0D, 0x94, 0x88)   # accent / positive
-CORAL  = RGBColor(0xF9, 0x61, 0x67)   # warning/negative
-ICE    = RGBColor(0xCA, 0xDC, 0xFC)   # light background tint
-WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
-OFF_W  = RGBColor(0xF4, 0xF7, 0xFB)   # slide bg for content slides
-DARK_T = RGBColor(0x1E, 0x29, 0x3B)   # body text
+NAVY  = RGBColor(0x1E, 0x27, 0x61)
+TEAL  = RGBColor(0x1C, 0x72, 0x93)
+MINT  = RGBColor(0x0D, 0x94, 0x88)
+CORAL = RGBColor(0xF9, 0x61, 0x67)
+ICE   = RGBColor(0xCA, 0xDC, 0xFC)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+OFF_W = RGBColor(0xF4, 0xF7, 0xFB)
+DARK  = RGBColor(0x1E, 0x29, 0x3B)
+MUTED = RGBColor(0x64, 0x74, 0x8B)
 
-W  = Inches(10)
-H  = Inches(5.625)
+W = Inches(10)
+H = Inches(5.625)
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def hex_rgb(r, g, b): return RGBColor(r, g, b)
 
-def fill_solid(shape, color: RGBColor):
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = color
+def dark_slide(sl):
+    sl.background.fill.solid()
+    sl.background.fill.fore_color.rgb = NAVY
 
-def add_text_box(slide, text, x, y, w, h, *,
-                 font_size=18, bold=False, color=DARK_T,
-                 align=PP_ALIGN.LEFT, italic=False, font_name="Calibri"):
-    txb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    tf = txb.text_frame
+def light_slide(sl):
+    sl.background.fill.solid()
+    sl.background.fill.fore_color.rgb = OFF_W
+
+def txt(sl, text, x, y, w, h, *, size=14, bold=False, color=DARK,
+        align=PP_ALIGN.LEFT, italic=False):
+    tb = sl.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.alignment = align
-    run = p.add_run()
-    run.text = text
-    run.font.size = Pt(font_size)
-    run.font.bold = bold
-    run.font.italic = italic
-    run.font.color.rgb = color
-    run.font.name = font_name
-    return txb
+    r = p.add_run()
+    r.text = text
+    r.font.size = Pt(size)
+    r.font.bold = bold
+    r.font.italic = italic
+    r.font.color.rgb = color
+    r.font.name = "Calibri"
+    return tb
 
-def add_rect(slide, x, y, w, h, color: RGBColor, line_color=None):
-    from pptx.util import Pt as PtU
-    shp = slide.shapes.add_shape(
-        1,  # MSO_SHAPE_TYPE.RECTANGLE = 1
-        Inches(x), Inches(y), Inches(w), Inches(h)
-    )
-    fill_solid(shp, color)
-    if line_color:
-        shp.line.color.rgb = line_color
-        shp.line.width = PtU(0.5)
+def rect(sl, x, y, w, h, color: RGBColor, border=False):
+    shp = sl.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = color
+    if border:
+        shp.line.color.rgb = MUTED
+        shp.line.width = Pt(0.5)
     else:
         shp.line.fill.background()
     return shp
 
-def dark_slide(slide):
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = NAVY
+def title_bar(sl, title, sub=None):
+    rect(sl, 0.45, 0.22, 0.07, 0.65 if not sub else 0.85, TEAL)
+    txt(sl, title, 0.62, 0.18, 9.0, 0.5, size=26, bold=True, color=NAVY)
+    if sub:
+        txt(sl, sub, 0.62, 0.65, 9.0, 0.28, size=12, color=TEAL)
 
-def light_slide(slide):
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = OFF_W
-
-def add_slide_number(slide, n, total, dark=False):
-    c = ICE if dark else RGBColor(0x94, 0xA3, 0xB8)
-    add_text_box(slide, f"{n}/{total}", 9.4, 5.2, 0.5, 0.3,
-                 font_size=10, color=c, align=PP_ALIGN.RIGHT)
-
-def add_title_bar(slide, title_text, subtitle=None):
-    """Teal left accent bar + title text on light slides."""
-    add_rect(slide, 0.45, 0.25, 0.07, 0.7 if not subtitle else 0.9, TEAL)
-    add_text_box(slide, title_text, 0.62, 0.20, 9.0, 0.5,
-                 font_size=26, bold=True, color=NAVY, font_name="Calibri")
-    if subtitle:
-        add_text_box(slide, subtitle, 0.62, 0.68, 9.0, 0.3,
-                     font_size=13, color=TEAL, font_name="Calibri")
-
-def bullet_items(slide, items: list[str], x, y, w, h,
-                 font_size=14, color=DARK_T, indent=False):
-    txb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    tf = txb.text_frame
+def bullets(sl, items, x, y, w, h, size=13, color=DARK):
+    tb = sl.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = tb.text_frame
     tf.word_wrap = True
     for i, item in enumerate(items):
-        if i == 0:
-            p = tf.paragraphs[0]
-        else:
-            p = tf.add_paragraph()
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.space_before = Pt(3)
-        run = p.add_run()
-        run.text = ("    " if indent else "") + "▸  " + item
-        run.font.size = Pt(font_size)
-        run.font.color.rgb = color
-        run.font.name = "Calibri"
+        r = p.add_run()
+        r.text = "▸  " + item
+        r.font.size = Pt(size)
+        r.font.color.rgb = color
+        r.font.name = "Calibri"
 
-def stat_card(slide, x, y, w, h, value, label, value_color=MINT):
-    add_rect(slide, x, y, w, h, WHITE)
-    add_rect(slide, x, y, w, 0.06, value_color)  # top accent
-    add_text_box(slide, value, x + 0.1, y + 0.15, w - 0.2, 0.55,
-                 font_size=30, bold=True, color=value_color,
-                 align=PP_ALIGN.CENTER)
-    add_text_box(slide, label, x + 0.05, y + 0.70, w - 0.1, 0.4,
-                 font_size=11, color=RGBColor(0x64, 0x74, 0x8B),
-                 align=PP_ALIGN.CENTER)
+def pg(sl, n, total, dark=False):
+    c = ICE if dark else MUTED
+    txt(sl, f"{n}/{total}", 9.4, 5.2, 0.5, 0.3, size=10, color=c, align=PP_ALIGN.RIGHT)
+
+def stat_card(sl, x, y, w, h, value, label, vc=MINT):
+    rect(sl, x, y, w, h, WHITE, border=True)
+    rect(sl, x, y, w, 0.06, vc)
+    txt(sl, value, x+0.08, y+0.13, w-0.16, 0.52, size=28, bold=True, color=vc, align=PP_ALIGN.CENTER)
+    txt(sl, label, x+0.05, y+0.68, w-0.1, 0.38, size=10, color=MUTED, align=PP_ALIGN.CENTER)
+
+def callout(sl, x, y, w, h, heading, body, hc=TEAL):
+    rect(sl, x, y, w, h, RGBColor(0xE0, 0xF2, 0xFE), border=True)
+    txt(sl, heading, x+0.12, y+0.08, w-0.2, 0.3, size=12, bold=True, color=hc)
+    txt(sl, body, x+0.12, y+0.38, w-0.2, h-0.45, size=11, color=DARK)
+
 
 # ---------------------------------------------------------------------------
-# Slides
-# ---------------------------------------------------------------------------
-def build(out_path: Path):
+def build(out: Path):
     prs = Presentation()
     prs.slide_width  = W
     prs.slide_height = H
+    blank = prs.slide_layouts[6]
+    TOTAL = 15
 
-    blank_layout = prs.slide_layouts[6]  # completely blank
-    TOTAL = 16
-
-    # ------------------------------------------------------------------ 1. Title
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 1. Title --------------------------------------------------------
+    sl = prs.slides.add_slide(blank)
     dark_slide(sl)
-    # Large title
-    add_text_box(sl, "Economic Bubble Monitoring", 0.7, 0.7, 8.6, 0.8,
-                 font_size=40, bold=True, color=WHITE, font_name="Calibri",
-                 align=PP_ALIGN.CENTER)
-    add_text_box(sl, "& Investment Strategy Dashboard",  0.7, 1.45, 8.6, 0.7,
-                 font_size=32, bold=True, color=ICE, font_name="Calibri",
-                 align=PP_ALIGN.CENTER)
-    # Accent line replaced by teal box
-    add_rect(sl, 3.5, 2.22, 3.0, 0.04, MINT)
-    add_text_box(sl, "Machine Learning for Rare Economic Events  ·  LANL / Academic Research",
-                 0.5, 2.45, 9.0, 0.45,
-                 font_size=14, color=ICE, align=PP_ALIGN.CENTER)
-    add_text_box(sl, "Educational research project  —  not investment advice",
-                 1.0, 3.05, 8.0, 0.35,
-                 font_size=11, italic=True, color=RGBColor(0x8B, 0xA4, 0xD4),
-                 align=PP_ALIGN.CENTER)
-    add_text_box(sl, "Mark Crisci  ·  2026",
-                 0.5, 4.85, 9.0, 0.4,
-                 font_size=12, color=RGBColor(0x8B, 0xA4, 0xD4),
-                 align=PP_ALIGN.CENTER)
-    add_slide_number(sl, 1, TOTAL, dark=True)
+    txt(sl, "Supervised Machine Learning for", 0.7, 0.6, 8.6, 0.55,
+        size=22, color=ICE, align=PP_ALIGN.CENTER)
+    txt(sl, "Future Drawdown Risk Classification", 0.7, 1.1, 8.6, 0.75,
+        size=36, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    rect(sl, 3.5, 1.92, 3.0, 0.04, MINT)
+    txt(sl, "Novel non-Kaggle dataset  ·  Imbalanced binary classification  ·  Rare-event evaluation",
+        0.5, 2.15, 9.0, 0.4, size=13, color=ICE, align=PP_ALIGN.CENTER)
+    txt(sl, "The interactive dashboard is the interpretation layer.  The ML pipeline is the deliverable.",
+        0.8, 2.65, 8.4, 0.38, size=12, italic=True, color=RGBColor(0x8B, 0xA4, 0xD4), align=PP_ALIGN.CENTER)
+    txt(sl, "Mark Crisci  ·  2026  ·  Educational research — not investment advice",
+        0.5, 4.9, 9.0, 0.38, size=11, color=RGBColor(0x8B, 0xA4, 0xD4), align=PP_ALIGN.CENTER)
+    pg(sl, 1, TOTAL, dark=True)
 
-    # ------------------------------------------------------------------ 2. Research Question
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 2. Why This Problem --------------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "The Research Question",
-                  "Can historical market data identify conditions that precede major drawdowns?")
-    add_slide_number(sl, 2, TOTAL)
-    bullet_items(sl, [
-        "Economic bubbles share recognisable signatures: extreme valuation, momentum divergence, volatility compression",
-        "Forecasting the exact timing of a crash is widely regarded as near-impossible",
-        "A more tractable goal: estimate the probability that current conditions RESEMBLE pre-drawdown regimes",
-        "Our target: burst_6m_segment = 1 if a segment-adjusted major drawdown occurs within 26 weekly observations",
-        "Segment-adjusted thresholds prevent labelling a −20% SPY move the same way as a −20% Bitcoin move",
-    ], 0.55, 1.25, 9.1, 3.8, font_size=15)
-    add_rect(sl, 0.5, 4.9, 9.0, 0.5, RGBColor(0xE0, 0xF2, 0xFE))
-    add_text_box(sl, "KEY CONSTRAINT  ·  We build a detector, not a predictor. A high score means resemblance to history, not a guaranteed crash.",
-                 0.65, 4.95, 8.7, 0.35, font_size=11,
-                 color=NAVY, bold=False)
+    title_bar(sl, "Why This Problem?",
+              "Rare-event binary classification on financial market time series")
+    pg(sl, 2, TOTAL)
+    bullets(sl, [
+        "Bubble episodes recur across asset classes: dot-com 2000, housing 2008, crypto 2021 — each with recognisable precursors",
+        "Exact crash timing is widely regarded as unpredictable — but supervised classification of pre-drawdown RISK is a tractable ML problem",
+        "Framing: does today's feature vector resemble historical pre-drawdown regimes?",
+        "Evaluation challenge: ~8.5% positive-class rate globally — standard accuracy is misleading; PR-AUC, MCC, and top-k lift are required",
+        "Dataset is original (Yahoo Finance + FRED), not pre-packaged — requires careful target construction and leakage prevention",
+    ], 0.55, 1.2, 9.1, 3.9)
+    rect(sl, 0.5, 4.88, 9.0, 0.45, RGBColor(0xE0, 0xF2, 0xFE))
+    txt(sl, "Goal: build a defensible rare-event classifier; evaluate it honestly; show what the models CAN and CANNOT conclude.",
+        0.65, 4.92, 8.7, 0.38, size=11, bold=True, color=NAVY)
 
-    # ------------------------------------------------------------------ 3. Dataset Architecture
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 3. Dataset Architecture ----------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Dataset Architecture", "81 tickers · 597,806 rows · 1927 – 2026")
-    add_slide_number(sl, 3, TOTAL)
-
-    # Stat cards row
-    card_y = 1.2
+    title_bar(sl, "Dataset: Original, Not Kaggle",
+              "81 tickers · 597,806 weekly rows · 1927–2026 · Yahoo Finance + FRED")
+    pg(sl, 3, TOTAL)
     for cx, val, lbl, vc in [
-        (0.4,  "81",       "Tickers tracked",        TEAL),
-        (2.75, "597,806",  "Weekly rows",             MINT),
-        (5.1,  "99 yrs",   "Historical coverage",     TEAL),
-        (7.45, "4",        "Asset segments",          MINT),
+        (0.4,  "81",      "Tickers (ETFs, stocks,\ncrypto, macro)", TEAL),
+        (2.75, "597,806", "Weekly rows",                            MINT),
+        (5.1,  "99 yrs",  "Historical coverage",                    TEAL),
+        (7.45, "4",       "Asset segments",                         MINT),
     ]:
-        stat_card(sl, cx, card_y, 2.15, 1.15, val, lbl, vc)
+        stat_card(sl, cx, 1.2, 2.15, 1.15, val, lbl, vc)
 
-    add_text_box(sl, "Four asset segments with segment-specific drawdown thresholds:", 0.55, 2.6, 9.0, 0.35,
-                 font_size=14, bold=True, color=NAVY)
-
-    seg_rows = [
-        ("global",              "All tickers pooled",          "−25% threshold"),
-        ("broad_index_etf",     "SPY, QQQ, EFA, EEM, VNQ …",  "−20% threshold"),
-        ("mega_cap_ai_tech",    "AAPL, MSFT, NVDA, GOOGL …",  "−35% threshold"),
-        ("speculative_high_vol","BTC, ETH, ARKK, GME …",      "−50% threshold"),
+    seg_data = [
+        ("global",               "All tickers",  "−25%"),
+        ("broad_index_etf",      "SPY, QQQ …",   "−20%"),
+        ("mega_cap_ai_tech",     "AAPL, NVDA …", "−35%"),
+        ("speculative_high_vol", "BTC, ARKK …",  "−50%"),
     ]
-    for i, (seg, desc, thr) in enumerate(seg_rows):
-        y = 3.1 + i * 0.47
-        add_rect(sl, 0.5, y, 2.9, 0.38, RGBColor(0xE0, 0xF2, 0xFE))
-        add_text_box(sl, seg, 0.6, y + 0.04, 2.7, 0.32, font_size=12, bold=True, color=NAVY)
-        add_text_box(sl, desc, 3.55, y + 0.04, 4.0, 0.32, font_size=12, color=DARK_T)
-        add_rect(sl, 7.65, y, 1.8, 0.38, TEAL)
-        add_text_box(sl, thr, 7.68, y + 0.04, 1.7, 0.32, font_size=12, bold=True, color=WHITE)
+    txt(sl, "Segment-specific drawdown thresholds — because −20% in SPY ≠ −20% in BTC:",
+        0.55, 2.55, 9.0, 0.3, size=13, bold=True, color=NAVY)
+    for i, (seg, tickers, thr) in enumerate(seg_data):
+        y = 2.95 + i * 0.42
+        bg = NAVY if i == 0 else (RGBColor(0xF1, 0xF5, 0xF9) if i % 2 else WHITE)
+        fc = WHITE if i == 0 else DARK
+        for j, (cell, cw) in enumerate(zip([seg, tickers, thr], [3.0, 3.8, 1.8])):
+            cx = 0.5 + sum([3.0, 3.8, 1.8][:j])
+            rect(sl, cx, y, cw, 0.35, bg)
+            txt(sl, cell, cx+0.1, y+0.05, cw-0.15, 0.27, size=12, bold=(i==0), color=fc)
 
-    # ------------------------------------------------------------------ 4. Target Label
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 4. Target Label ------------------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Target Label: burst_6m_segment",
-                  "Segment-adjusted forward drawdown labels — no random shuffling, chronological splits")
-    add_slide_number(sl, 4, TOTAL)
+    title_bar(sl, "Target Label: burst_6m_segment",
+              "Binary: 1 if segment-adjusted major drawdown within next 26 weekly observations")
+    pg(sl, 4, TOTAL)
+    bullets(sl, [
+        "Positive rate: 6.8% (mega_cap_ai_tech) to 11.0% (broad_index_etf) — imbalanced by design",
+        "Chronological 70/15/15 split by unique date — no shuffling, no future leakage",
+        "target_valid_burst_6m_segment flag excludes overlap windows (ongoing burst rows not labelled as new onset)",
+        "26-week forward window: long enough to be actionable, short enough to be testable",
+    ], 0.55, 1.2, 9.1, 2.2, size=14)
 
-    add_text_box(sl, "Why segment-specific thresholds?", 0.55, 1.25, 9.0, 0.35,
-                 font_size=16, bold=True, color=NAVY)
-    bullet_items(sl, [
-        "A −20% decline in SPY (broad market) is a major correction; the same move in BTC is routine volatility",
-        "Using a single threshold conflates qualitatively different events and corrupts the label distribution",
-        "Segment thresholds ensure each label class reflects truly-unusual drawdowns for that asset class",
-    ], 0.55, 1.6, 9.0, 1.3, font_size=14)
-
-    add_text_box(sl, "Class balance & split design", 0.55, 2.95, 9.0, 0.35,
-                 font_size=16, bold=True, color=NAVY)
-    # table of rates
+    txt(sl, "Class balance by scope (test split):", 0.55, 3.45, 9.0, 0.3, size=13, bold=True, color=NAVY)
     rows = [
-        ("Scope",               "Positive rate", "Training cutoff"),
-        ("global",              "8.5%",          "70% chronological"),
-        ("broad_index_etf",     "11.0%",         "70% chronological"),
-        ("mega_cap_ai_tech",    "6.8%",          "70% chronological"),
-        ("speculative_high_vol","10.3%",         "70% chronological"),
+        ("Scope",                "Positive rate", "Test rows"),
+        ("global",               "8.5%",          "54,244"),
+        ("broad_index_etf",      "11.0%",         "~16,000"),
+        ("mega_cap_ai_tech",     "6.8%",          "9,481"),
+        ("speculative_high_vol", "10.3%",         "~11,700"),
     ]
     for i, row in enumerate(rows):
-        y = 3.35 + i * 0.39
-        bg = NAVY if i == 0 else (RGBColor(0xF1, 0xF5, 0xF9) if i % 2 == 1 else WHITE)
-        fc = WHITE if i == 0 else DARK_T
-        for j, (cell, cw) in enumerate(zip(row, [3.0, 2.2, 3.5])):
-            cx = 0.5 + sum([3.0, 2.2, 3.5][:j])
-            add_rect(sl, cx, y, cw, 0.36, bg)
-            add_text_box(sl, cell, cx + 0.08, y + 0.06, cw - 0.1, 0.28,
-                         font_size=12, bold=(i == 0), color=fc)
+        y = 3.82 + i * 0.34
+        bg = NAVY if i == 0 else (RGBColor(0xF1, 0xF5, 0xF9) if i%2 else WHITE)
+        fc = WHITE if i == 0 else DARK
+        for j, (cell, cw) in enumerate(zip(row, [3.5, 2.5, 2.5])):
+            cx = 0.5 + sum([3.5, 2.5, 2.5][:j])
+            rect(sl, cx, y, cw, 0.31, bg)
+            txt(sl, cell, cx+0.1, y+0.04, cw-0.15, 0.24, size=11, bold=(i==0), color=fc)
 
-    # ------------------------------------------------------------------ 5. ML Pipeline
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 5. EDA & Class Imbalance --------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Machine Learning Pipeline",
-                  "Chronological splits · no data leakage · 5 model families per scope")
-    add_slide_number(sl, 5, TOTAL)
-
-    # Pipeline flow boxes
-    steps = [
-        ("1  Data\nIngestion",       "81 tickers\n1927–2026"),
-        ("2  Feature\nEngineering",  "Technical · Macro\nValuation · Rule-based"),
-        ("3  ML Dataset",            "burst_6m_segment\ntarget construction"),
-        ("4  Chrono\nSplit",         "70% train · 15% val\n15% test"),
-        ("5  Model\nTraining",       "5 families\n4 scopes each"),
-        ("6  Evaluation",            "PR-AUC · ROC-AUC\nMCC · FP/TP"),
-    ]
-    box_w = 1.45
-    for i, (title, sub) in enumerate(steps):
-        bx = 0.3 + i * 1.57
-        add_rect(sl, bx, 1.3, box_w, 1.05, TEAL if i % 2 == 0 else NAVY)
-        add_text_box(sl, title, bx + 0.05, 1.35, box_w - 0.1, 0.55,
-                     font_size=12, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        add_text_box(sl, sub, bx + 0.05, 1.88, box_w - 0.1, 0.44,
-                     font_size=9, color=ICE, align=PP_ALIGN.CENTER)
-        if i < len(steps) - 1:
-            add_text_box(sl, "→", bx + box_w, 1.68, 0.12, 0.3,
-                         font_size=16, bold=True, color=TEAL, align=PP_ALIGN.CENTER)
-
-    add_text_box(sl, "Model families trained per scope:", 0.55, 2.6, 9.0, 0.35,
-                 font_size=14, bold=True, color=NAVY)
-    models = [
-        ("Logistic Regression",    "Linear baseline, L2 regularised"),
-        ("Elastic Net Logistic",   "L1+L2 sparsity, useful for high-dim feature sets"),
-        ("Random Forest",          "Ensemble tree, captures non-linearities"),
-        ("Balanced Random Forest", "Class-weight adjusted RF for imbalanced labels"),
-        ("XGBoost",                "Gradient boosted trees, our most complex model"),
-    ]
-    for i, (m, d) in enumerate(models):
-        y = 3.05 + i * 0.43
-        add_rect(sl, 0.5, y, 3.2, 0.35, RGBColor(0xE0, 0xF2, 0xFE))
-        add_text_box(sl, m, 0.6, y + 0.04, 3.0, 0.28, font_size=12, bold=True, color=NAVY)
-        add_text_box(sl, d, 3.85, y + 0.04, 5.8, 0.28, font_size=12, color=DARK_T)
-
-    # ------------------------------------------------------------------ 6. Model Performance (chart)
-    sl = prs.slides.add_slide(blank_layout)
-    light_slide(sl)
-    add_title_bar(sl, "Test-Set Model Performance",
-                  "PR-AUC (primary) · ROC-AUC · Global scope, chronological hold-out 2020–2026 approx")
-    add_slide_number(sl, 6, TOTAL)
-
-    # Bar chart — PR-AUC by model (global scope, test)
-    cd = ChartData()
-    cd.categories = ["Logistic\nRegression", "Elastic Net\nLogistic", "Balanced\nRandom Forest",
-                     "XGBoost", "Random\nForest", "Rule-Based\nBaseline"]
-    cd.add_series("PR-AUC (global test)",
-                  [0.128, 0.128, 0.108, 0.109, 0.101, 0.096])
-    cd.add_series("ROC-AUC (global test)",
-                  [0.615, 0.615, 0.592, 0.585, 0.574, 0.547])
-
-    chart = sl.shapes.add_chart(
-        XL_CHART_TYPE.BAR_CLUSTERED,
-        Inches(0.4), Inches(1.25), Inches(6.0), Inches(3.9), cd
-    ).chart
-    chart.chart_title.has_text_frame = False
-    chart.has_legend = True
-    from pptx.enum.chart import XL_LEGEND_POSITION
-    chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-
-    # Annotations on right
-    add_rect(sl, 6.7, 1.25, 3.0, 1.5, RGBColor(0xE0, 0xF2, 0xFE))
-    add_text_box(sl, "WOW #1", 6.85, 1.30, 2.7, 0.35,
-                 font_size=13, bold=True, color=TEAL)
-    add_text_box(sl,
-                 "Logistic Regression equals or beats XGBoost on PR-AUC. A simple linear model outperforms a boosted ensemble on this rare-event dataset.",
-                 6.85, 1.62, 2.7, 0.95, font_size=11, color=DARK_T)
-
-    add_rect(sl, 6.7, 2.9, 3.0, 1.25, RGBColor(0xFE, 0xF9, 0xEE))
-    add_text_box(sl, "HONEST BASELINE", 6.85, 2.95, 2.7, 0.35,
-                 font_size=13, bold=True, color=CORAL)
-    add_text_box(sl,
-                 "Base positive rate is 8.5% (global). A random classifier has PR-AUC ≈ 0.085. Our best model achieves 0.128.",
-                 6.85, 3.28, 2.7, 0.75, font_size=11, color=DARK_T)
-
-    # ------------------------------------------------------------------ 7. Key Finding: Top-K Lift
-    sl = prs.slides.add_slide(blank_layout)
-    dark_slide(sl)
-    add_slide_number(sl, 7, TOTAL, dark=True)
-    add_text_box(sl, "Key Finding", 0.6, 0.3, 8.8, 0.55,
-                 font_size=16, color=ICE, bold=False, font_name="Calibri")
-    add_text_box(sl, "WOW #2 — Top-5% Risk Ranking Lifts Event Rate 2×",
-                 0.6, 0.75, 9.0, 0.75,
-                 font_size=28, bold=True, color=WHITE, font_name="Calibri")
-    add_rect(sl, 0.6, 1.55, 8.8, 0.04, MINT)
-
-    stats = [
-        ("2.15×",  "Top-5% lift\nBalanced RF / mega_cap_ai_tech"),
-        ("2.05×",  "Top-5% lift\nLogistic Regression / global"),
-        ("~8.5%",  "Base positive rate\n(global scope)"),
-        ("~17.5%", "Top-5% bucket rate\n(Logistic Regression / global)"),
-    ]
-    for i, (val, lbl) in enumerate(stats):
-        cx = 0.5 + i * 2.35
-        add_rect(sl, cx, 1.75, 2.15, 1.5, RGBColor(0x11, 0x2B, 0x6E))
-        add_text_box(sl, val, cx + 0.1, 1.85, 1.95, 0.7,
-                     font_size=34, bold=True, color=MINT,
-                     align=PP_ALIGN.CENTER)
-        add_text_box(sl, lbl, cx + 0.1, 2.55, 1.95, 0.62,
-                     font_size=11, color=ICE, align=PP_ALIGN.CENTER)
-
-    add_text_box(sl, "Interpretation: The model cannot tell you exactly when a crash will happen. "
-                     "But when we sort all ticker-weeks by predicted probability and take the highest-risk 5%, "
-                     "that bucket contains real drawdown events at twice the baseline rate.",
-                 0.6, 3.4, 9.0, 0.95, font_size=13, color=ICE)
-
-    add_rect(sl, 0.55, 4.5, 8.9, 0.6, RGBColor(0x11, 0x2B, 0x6E))
-    add_text_box(sl, "This is risk enrichment, not certainty. 82.5% of 'high-risk' rows still had NO drawdown.",
-                 0.7, 4.55, 8.6, 0.45, font_size=13, italic=True, color=CORAL)
-
-    # ------------------------------------------------------------------ 8. Why Simple Beats Complex
-    sl = prs.slides.add_slide(blank_layout)
-    light_slide(sl)
-    add_title_bar(sl, "WOW #3 — Why Simple Models Win Here",
-                  "Logistic Regression matches XGBoost on PR-AUC despite 10× lower complexity")
-    add_slide_number(sl, 8, TOTAL)
-
-    reasons = [
-        ("Small true-event count",
-         "Only ~500–2,700 positive rows in the global test set. Tree ensembles need more signal to outperform linear models."),
-        ("Temporal autocorrelation",
-         "Bubble regimes persist for months. Many 'events' are the same episode repeated across tickers. Independent observations are far fewer than row count suggests."),
-        ("Feature linearity",
-         "Many bubble precursors (momentum, RSI distance, yield spread) have near-linear relationships with risk. No need for XGBoost's non-linear capacity."),
-        ("Regularisation advantage",
-         "L2 / Elastic Net regularisation prevents overfitting on a relatively small unique-event count. XGBoost without careful tuning can overfit."),
-    ]
-    for i, (title, body) in enumerate(reasons):
-        y = 1.25 + i * 0.99
-        add_rect(sl, 0.5, y, 0.06, 0.8, MINT)
-        add_text_box(sl, title, 0.7, y, 3.5, 0.38, font_size=14, bold=True, color=NAVY)
-        add_text_box(sl, body, 0.7, y + 0.38, 8.8, 0.52, font_size=12, color=DARK_T)
-
-    add_rect(sl, 0.5, 5.2, 9.0, 0.22, ICE)
-    add_text_box(sl, "Lesson: Always train a regularised linear baseline first. Complexity is justified only when it demonstrably improves out-of-time metrics.",
-                 0.6, 5.22, 8.8, 0.18, font_size=10, italic=True, color=NAVY)
-
-    # ------------------------------------------------------------------ 9. Rare Event Challenge
-    sl = prs.slides.add_slide(blank_layout)
-    light_slide(sl)
-    add_title_bar(sl, "The Rare Event Challenge",
-                  "Imbalanced labels · SMOTE experiments · Balanced Random Forest · Cost thresholds")
-    add_slide_number(sl, 9, TOTAL)
-
+    title_bar(sl, "EDA: Class Imbalance & Feature Distributions",
+              "Why accuracy fails · What the data tells us before modeling")
+    pg(sl, 5, TOTAL)
     left = [
-        "8.5% positive rate (global) — standard classifiers optimise for the majority class",
-        "Accuracy is misleading: predicting 'never burst' gives 91.5% accuracy with 0% recall",
-        "PR-AUC preferred: summarises precision-recall trade-off, not corrupted by TN-majority",
-        "MCC: single metric that accounts for all four confusion-matrix cells symmetrically",
+        "8.5% positive rate — majority-class classifier gets 91.5% accuracy, 0% recall",
+        "Pre-burst weeks show elevated RSI extremes, higher short-term vol, momentum divergence",
+        "Valuation multiples alone are weak predictors — timing signal requires velocity features",
+        "High within-ticker autocorrelation: one regime = hundreds of correlated positive rows",
     ]
     right = [
-        "SMOTE / SMOTE-ENN: oversample minority class in training — improves recall but risks FP inflation",
-        "Balanced Random Forest: class_weight='balanced' equivalent for trees — robust alternative",
-        "Cost-ratio thresholds: vary FP/FN cost ratio to find operating points for different use cases",
-        "Rare-event constrained threshold: minimum precision ≥ 12%, alert rate ≤ 20% enforced",
+        "→ accuracy is misleading for this problem",
+        "→ PR-AUC, MCC, and top-k lift are the right metrics",
+        "→ feature engineering must include momentum, RSI, and drawdown velocity",
+        "→ effective sample size is far smaller than 597K rows",
     ]
-    add_text_box(sl, "Problem", 0.55, 1.2, 4.5, 0.3, font_size=14, bold=True, color=NAVY)
-    add_text_box(sl, "Our Approach", 5.3, 1.2, 4.5, 0.3, font_size=14, bold=True, color=NAVY)
-    bullet_items(sl, left,  0.5, 1.55, 4.5, 3.5, font_size=12)
-    bullet_items(sl, right, 5.2, 1.55, 4.5, 3.5, font_size=12)
-    add_rect(sl, 4.9, 1.15, 0.03, 4.1, ICE)
+    txt(sl, "EDA finding", 0.55, 1.15, 4.5, 0.3, size=13, bold=True, color=NAVY)
+    txt(sl, "Modeling implication", 5.2, 1.15, 4.5, 0.3, size=13, bold=True, color=TEAL)
+    rect(sl, 4.88, 1.1, 0.04, 4.2, ICE)
+    bullets(sl, left,  0.5, 1.45, 4.25, 3.6, size=12)
+    bullets(sl, right, 5.0, 1.45, 4.65, 3.6, size=12, color=TEAL)
 
-    # ------------------------------------------------------------------ 10. Phase 8 Transformations
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 6. Feature Engineering ----------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Phase 8: Feature Transformation Experiment",
-                  "Controlled experiment: same splits, same models, only the feature pipeline changes")
-    add_slide_number(sl, 10, TOTAL)
-
-    add_text_box(sl, "9 transformation families · 88 new columns on top of baseline",
-                 0.55, 1.2, 9.0, 0.35, font_size=14, bold=True, color=TEAL)
-
-    families = [
-        ("log1p / signed-log",         "Compress right-skewed valuation metrics"),
-        ("Winsorisation",               "Remove extreme outliers (fit on TRAIN only)"),
-        ("Rolling z-score by ticker",   "Normalise within-ticker time series"),
-        ("Expanding percentile rank",   "Non-parametric rank transform, shift(1) leakage guard"),
-        ("Regime flags",                "Binary indicators from volatility/RSI thresholds"),
-        ("Interaction features",        "PE × momentum, vol × drawdown cross terms"),
-        ("Vol-adjusted returns",        "Return scaled by rolling 13w realised vol"),
-        ("Drawdown-state flags",        "Binary: currently in drawdown ≥ X%?"),
-        ("Squared terms",               "Captures non-linear tails in linear models"),
+    title_bar(sl, "Feature Engineering & Transformations",
+              "Baseline families + Phase 8 transformed features (88 additional columns)")
+    pg(sl, 6, TOTAL)
+    base_fams = [
+        ("Price momentum & RSI", "7/14/26-week returns, RSI, distance from 200-DMA"),
+        ("Volume ratios",        "Relative volume vs 12-week avg"),
+        ("Valuation",            "P/E, P/S, P/B, EV/EBITDA, market cap"),
+        ("Macro",                "Yield curve spread, VIX, credit spreads"),
+        ("Rule-based scores",    "Hindenburg Omen, CAPE excess, yield inversion"),
+        ("Drawdown & vol",       "Rolling max drawdown 4w/13w/26w, realised vol"),
     ]
-    col1 = families[:5]
-    col2 = families[5:]
-    for i, (name, desc) in enumerate(col1):
-        y = 1.7 + i * 0.60
-        add_rect(sl, 0.5, y, 0.06, 0.44, MINT)
-        add_text_box(sl, name, 0.68, y, 2.5, 0.25, font_size=11, bold=True, color=NAVY)
-        add_text_box(sl, desc, 0.68, y + 0.24, 4.1, 0.22, font_size=10, color=DARK_T)
-    for i, (name, desc) in enumerate(col2):
-        y = 1.7 + i * 0.60
-        add_rect(sl, 5.2, y, 0.06, 0.44, TEAL)
-        add_text_box(sl, name, 5.38, y, 2.5, 0.25, font_size=11, bold=True, color=NAVY)
-        add_text_box(sl, desc, 5.38, y + 0.24, 4.3, 0.22, font_size=10, color=DARK_T)
+    txt(sl, "Baseline feature families:", 0.55, 1.2, 4.5, 0.3, size=13, bold=True, color=NAVY)
+    for i, (name, desc) in enumerate(base_fams):
+        y = 1.55 + i * 0.55
+        rect(sl, 0.5, y, 0.06, 0.4, TEAL)
+        txt(sl, name, 0.68, y, 2.3, 0.22, size=11, bold=True, color=NAVY)
+        txt(sl, desc, 0.68, y+0.22, 4.1, 0.22, size=10, color=DARK)
 
-    add_rect(sl, 0.5, 4.75, 9.0, 0.55, RGBColor(0xE0, 0xF2, 0xFE))
-    add_text_box(sl,
-                 "Leakage guard: Winsor bounds and regime thresholds fitted on TRAIN split only (TransformFitState). "
-                 "Rolling z-scores use shift(1) before expanding window to prevent look-ahead.",
-                 0.65, 4.82, 8.7, 0.40, font_size=11, color=NAVY)
+    txt(sl, "Phase 8 transformed families (88 new columns):", 5.15, 1.2, 4.6, 0.3, size=13, bold=True, color=NAVY)
+    tfams = [
+        "log1p / signed-log compression",
+        "Winsorisation (fit on TRAIN only)",
+        "Rolling z-score by ticker (shift(1) guard)",
+        "Expanding percentile rank",
+        "Regime flags (vol / RSI thresholds)",
+        "Interaction features (PE × momentum …)",
+        "Vol-adjusted returns",
+        "Drawdown-state binary flags",
+        "Squared terms",
+    ]
+    for i, f in enumerate(tfams):
+        y = 1.55 + i * 0.44
+        rect(sl, 5.12, y, 0.06, 0.32, MINT)
+        txt(sl, f, 5.3, y+0.02, 4.4, 0.28, size=11, color=DARK)
 
-    # ------------------------------------------------------------------ 11. Transformation Results
-    sl = prs.slides.add_slide(blank_layout)
+    rect(sl, 0.5, 5.12, 9.0, 0.32, RGBColor(0xE0, 0xF2, 0xFE))
+    txt(sl, "Leakage prevention: winsor/regime thresholds fit on TRAIN only (TransformFitState); rolling z-score uses shift(1) lookback guard.",
+        0.65, 5.16, 8.7, 0.24, size=10, color=NAVY)
+
+    # ---- 7. Benchmark Model --------------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "WOW #4 — Transformation Results",
-                  "Selective gains: linear models benefit, trees less so; consistent pattern matters more than magnitude")
-    add_slide_number(sl, 11, TOTAL)
+    title_bar(sl, "Benchmark: Logistic Regression (L2)",
+              "Simplest defensible baseline for imbalanced binary classification")
+    pg(sl, 7, TOTAL)
+    for cx, val, lbl, vc in [
+        (0.4,  "0.128",  "Test PR-AUC\n(base rate 0.085)", MINT),
+        (2.75, "0.615",  "Test ROC-AUC",                   TEAL),
+        (5.1,  "2.05×",  "Top-5% lift",                    MINT),
+        (7.45, "0.077",  "MCC",                            TEAL),
+    ]:
+        stat_card(sl, cx, 1.25, 2.15, 1.2, val, lbl, vc)
 
-    # Chart: delta PR-AUC
-    cd2 = ChartData()
-    cd2.categories = ["XGBoost\nglobal", "Random Forest\nglobal", "Balanced RF\nglobal",
-                      "Logistic Reg\nglobal", "Elastic Net\nglobal",
-                      "XGBoost\nbroad ETF", "Random Forest\nbroad ETF"]
-    cd2.add_series("ΔPR-AUC (transformed − baseline)",
-                   [+0.010, +0.015, 0.000, -0.002, -0.001,
-                    +0.007, +0.015])
-    chart2 = sl.shapes.add_chart(
-        XL_CHART_TYPE.BAR_CLUSTERED,
-        Inches(0.4), Inches(1.25), Inches(5.8), Inches(3.7), cd2
+    txt(sl, "Why Logistic Regression as benchmark?", 0.55, 2.65, 9.0, 0.3, size=14, bold=True, color=NAVY)
+    bullets(sl, [
+        "Regularised linear models are the standard first baseline for rare-event classification",
+        "L2 penalty controls for small effective sample size (few independent bubble events)",
+        "Coefficients are interpretable — feature direction and magnitude are directly readable",
+        "Any more-complex model that fails to beat this baseline does not justify its added complexity",
+        "Threshold tuned on validation split, not hard-coded at 0.50",
+    ], 0.55, 3.0, 9.1, 2.4, size=13)
+
+    # ---- 8. All Models Tested ------------------------------------------
+    sl = prs.slides.add_slide(blank)
+    light_slide(sl)
+    title_bar(sl, "All Models Tested",
+              "5 baseline families + Rule-Based baseline · LightGBM in transformed-feature pipeline only")
+    pg(sl, 8, TOTAL)
+
+    model_rows = [
+        # (model, role, pr_auc, note)
+        ("Logistic Regression",    "Benchmark & recommended overall",      "0.128", "global"),
+        ("Elastic Net Logistic",   "Regularised linear comparison",         "0.128", "global"),
+        ("Random Forest",          "Nonlinear tree comparison",             "0.101", "global"),
+        ("Balanced Random Forest", "Imbalance-aware tree (class_weight)",   "0.108", "global"),
+        ("XGBoost",                "Boosted-tree challenger",               "0.109", "global"),
+        ("Rule-Based Score",       "Interpretable sanity-check baseline",   "0.096", "global"),
+        ("LightGBM",               "Phase 8 transformed-feature only",     "0.119", "broad ETF"),
+    ]
+    hdrs = ["Model", "Role", "Test PR-AUC", "Scope / note"]
+    for j, (h, cw) in enumerate(zip(hdrs, [3.0, 3.2, 1.5, 1.9])):
+        cx = 0.4 + sum([3.0, 3.2, 1.5, 1.9][:j])
+        rect(sl, cx, 1.2, cw, 0.35, NAVY)
+        txt(sl, h, cx+0.1, 1.24, cw-0.15, 0.27, size=12, bold=True, color=WHITE)
+    for i, (m, role, auc, note) in enumerate(model_rows):
+        y = 1.58 + i * 0.44
+        is_lgbm = "LightGBM" in m
+        bg = RGBColor(0xFE, 0xF9, 0xEE) if is_lgbm else (RGBColor(0xF1, 0xF5, 0xF9) if i%2 else WHITE)
+        for j, (cell, cw) in enumerate(zip([m, role, auc, note], [3.0, 3.2, 1.5, 1.9])):
+            cx = 0.4 + sum([3.0, 3.2, 1.5, 1.9][:j])
+            rect(sl, cx, y, cw, 0.38, bg)
+            fc = CORAL if (is_lgbm and j == 0) else DARK
+            txt(sl, cell, cx+0.1, y+0.06, cw-0.15, 0.28, size=11, bold=(is_lgbm and j==0), color=fc)
+    rect(sl, 0.4, 4.72, 9.2, 0.65, RGBColor(0xFE, 0xF9, 0xEE))
+    txt(sl,
+        "LightGBM (orange row): trained only in the transformed-feature experiment (Phase 8). "
+        "It is NOT in the baseline comparison. The baseline uses Balanced RF instead. "
+        "This is explicit in the dashboard and all presentation materials.",
+        0.55, 4.78, 9.0, 0.52, size=11, italic=True, color=CORAL)
+
+    # ---- 9. Splits & Metrics -------------------------------------------
+    sl = prs.slides.add_slide(blank)
+    light_slide(sl)
+    title_bar(sl, "Train / Val / Test & Evaluation Metrics",
+              "Chronological 70/15/15 split · no shuffle · threshold tuned on val")
+    pg(sl, 9, TOTAL)
+
+    for cx, w2, label, desc, vc in [
+        (0.5,  2.8, "Train 70%",      "1927 – ~2007\nModel fitting", NAVY),
+        (3.45, 2.8, "Validation 15%", "~2007 – ~2016\nThreshold tuning", TEAL),
+        (6.4,  2.8, "Test 15%",       "~2016 – 2026\nFinal evaluation", MINT),
+    ]:
+        rect(sl, cx, 1.25, w2, 1.0, vc)
+        txt(sl, label, cx+0.15, 1.33, w2-0.25, 0.4, size=15, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        txt(sl, desc, cx+0.15, 1.73, w2-0.25, 0.45, size=11, color=ICE, align=PP_ALIGN.CENTER)
+
+    txt(sl, "Evaluation metrics for imbalanced rare-event classification:", 0.55, 2.5, 9.0, 0.3, size=14, bold=True, color=NAVY)
+    metrics = [
+        ("PR-AUC",         "Primary — not corrupted by true-negative majority; summarises precision-recall trade-off"),
+        ("ROC-AUC",        "Secondary — overall ranking ability (but FPR denominator inflated by TN majority)"),
+        ("MCC",            "Single symmetric metric using all four confusion-matrix cells"),
+        ("Top-k lift",     "Event rate in top 5%/10% risk bucket vs base rate — most intuitive business metric"),
+        ("FP/TP burden",   "False positives per true positive — critical for alert-noise assessment"),
+        ("Brier score",    "Calibration quality — are predicted probabilities reliable?"),
+    ]
+    for i, (m, d) in enumerate(metrics):
+        y = 2.88 + i * 0.43
+        rect(sl, 0.5, y, 1.7, 0.35, TEAL if i%2==0 else NAVY)
+        txt(sl, m, 0.58, y+0.06, 1.55, 0.26, size=11, bold=True, color=WHITE)
+        txt(sl, d, 2.35, y+0.06, 7.3, 0.28, size=11, color=DARK)
+
+    # ---- 10. Model Results & Recommended Model --------------------------
+    sl = prs.slides.add_slide(blank)
+    light_slide(sl)
+    title_bar(sl, "Model Results & Recommended Overall Model",
+              "Test-split PR-AUC · Composite score selects Logistic Regression / global")
+    pg(sl, 10, TOTAL)
+
+    # Bar chart
+    cd = ChartData()
+    cd.categories = ["LogReg", "ElasticNet", "Bal.RF", "XGBoost", "RF", "Rule-Based"]
+    cd.add_series("PR-AUC (test)", [0.128, 0.128, 0.108, 0.109, 0.101, 0.096])
+    ch = sl.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED,
+        Inches(0.4), Inches(1.2), Inches(5.5), Inches(3.6), cd
     ).chart
-    chart2.chart_title.has_text_frame = False
-    chart2.has_legend = False
+    ch.chart_title.has_text_frame = False
+    ch.has_legend = False
 
-    # Right panel takeaways
-    add_rect(sl, 6.45, 1.25, 3.3, 3.7, RGBColor(0xF1, 0xF5, 0xF9))
-    add_text_box(sl, "Takeaways", 6.6, 1.35, 3.0, 0.35,
-                 font_size=14, bold=True, color=NAVY)
-    tks = [
-        "Tree models (XGBoost, RF) gain +0.01–0.015 PR-AUC from transformations",
-        "Linear models show near-zero delta — they already handle scale via regularisation",
-        "LightGBM (Phase 8 benchmark) PR-AUC 0.113 on broad ETF — competitive with XGBoost",
-        "No model crosses the 'practically useful' bar of PR-AUC > 0.20",
-        "A consistent positive delta (not cherry-picked) is the honest interpretation",
-    ]
-    bullet_items(sl, tks, 6.5, 1.7, 3.2, 3.0, font_size=11)
+    callout(sl, 6.15, 1.25, 3.55, 1.4,
+            "Top composite model",
+            "Logistic Regression / global\nPR-AUC: 0.128  |  ROC-AUC: 0.615\nTop-5% lift: 2.05×  |  MCC: 0.077")
+    callout(sl, 6.15, 2.78, 3.55, 1.0,
+            "Rule-based sanity check",
+            "PR-AUC 0.096 — ML must beat this.\nXGBoost (0.109), Balanced RF (0.108): above baseline.",
+            hc=MUTED)
+    callout(sl, 6.15, 3.90, 3.55, 0.85,
+            "Honest base rate",
+            "Random classifier PR-AUC ≈ 0.085.\nBest gain: +50% above random.",
+            hc=CORAL)
 
-    add_rect(sl, 0.4, 5.1, 9.2, 0.35, ICE)
-    add_text_box(sl, "Honest framing: transformations improve feature representation — they do not create new independent historical bubble events.",
-                 0.55, 5.13, 9.0, 0.28, font_size=10, italic=True, color=NAVY)
+    rect(sl, 0.4, 4.93, 9.2, 0.45, RGBColor(0xE0, 0xF2, 0xFE))
+    txt(sl, "Composite score formula: PR-AUC 35% + ROC-AUC 20% + MCC 20% − FP/TP burden 15% − Brier 10%  ·  Fully documented in Feature Audit tab",
+        0.55, 4.97, 9.0, 0.36, size=10, color=NAVY)
 
-    # ------------------------------------------------------------------ 12. Multi-Layer Validation
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 11. Baseline vs Transformed: Three Comparability Groups ----------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Multi-Layer Validation Framework",
-                  "Chronological ML · Event-level leave-one-crisis · Hazard model · Poisson count model · Rule-based baseline")
-    add_slide_number(sl, 12, TOTAL)
+    title_bar(sl, "Feature Transformations: Three Model Groups",
+              "Delta metrics are only valid for models present in BOTH pipelines")
+    pg(sl, 11, TOTAL)
 
+    txt(sl, "Transformations change predictor variable representation, not model algorithms.",
+        0.5, 1.15, 9.2, 0.3, size=13, bold=True, color=NAVY)
+
+    # Group 1: Comparable (delta chart)
+    rect(sl, 0.4, 1.52, 9.2, 0.28, TEAL)
+    txt(sl, "GROUP 1 — Before/After comparison (delta is valid): Logistic Reg, Elastic Net, Random Forest, XGBoost, Rule-Based Score",
+        0.55, 1.56, 8.9, 0.22, size=10, bold=True, color=WHITE)
+
+    cd2 = ChartData()
+    cd2.categories = ["XGBoost\nglobal", "RF\nglobal", "XGBoost\nbroad ETF", "LogReg\nglobal", "ElasticNet\nglobal"]
+    cd2.add_series("ΔPR-AUC (transformed − baseline)", [+0.010, +0.015, +0.007, -0.002, -0.001])
+    ch2 = sl.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED,
+        Inches(0.4), Inches(1.85), Inches(5.5), Inches(2.3), cd2
+    ).chart
+    ch2.chart_title.has_text_frame = False
+    ch2.has_legend = False
+
+    # Group 2 & 3 boxes on right
+    rect(sl, 6.1, 1.85, 3.6, 1.1, RGBColor(0xFE, 0xF9, 0xEE), border=True)
+    txt(sl, "GROUP 2 — Baseline-only", 6.22, 1.91, 3.35, 0.28, size=11, bold=True, color=CORAL)
+    txt(sl, "Balanced Random Forest\nNo transformed version — delta not calculated.",
+        6.22, 2.18, 3.35, 0.68, size=10, color=DARK)
+
+    rect(sl, 6.1, 3.07, 3.6, 1.08, RGBColor(0xFE, 0xF0, 0xD8), border=True)
+    txt(sl, "GROUP 3 — Transformed-only", 6.22, 3.13, 3.35, 0.28, size=11, bold=True, color=CORAL)
+    txt(sl, "LightGBM\nNo baseline version — delta not calculated.\nPR-AUC: 0.119 (broad ETF), 0.113 (global)\nCompetitive with XGBoost, not a before/after result.",
+        6.22, 3.40, 3.35, 0.68, size=10, color=DARK)
+
+    rect(sl, 0.4, 4.22, 9.2, 0.55, RGBColor(0xE0, 0xF2, 0xFE))
+    txt(sl, "Key finding: Tree models (XGBoost, RF) gain +0.01–0.015 PR-AUC from transformations. "
+            "Linear models gain ~0 (regularisation already handles scale). "
+            "No model crosses PR-AUC 0.20 in either pipeline.",
+        0.55, 4.26, 8.9, 0.44, size=11, color=NAVY)
+
+    rect(sl, 0.4, 4.85, 9.2, 0.55, RGBColor(0xFE, 0xF9, 0xEE))
+    txt(sl, "Caveat: transformations improve predictor representation. They do not create new independent historical bubble events.",
+        0.55, 4.90, 8.9, 0.42, size=11, italic=True, color=CORAL)
+
+    # ---- 12. Feature Importance ----------------------------------------
+    sl = prs.slides.add_slide(blank)
+    light_slide(sl)
+    title_bar(sl, "Feature Importance & Interpretability",
+              "Cross-model convergence on the same feature families builds confidence")
+    pg(sl, 12, TOTAL)
+    bullets(sl, [
+        "Logistic Regression signed coefficients: positive = raises risk; negative = lowers it",
+        "Tree feature importance: mean impurity decrease across splits",
+        "Both methods converge on: momentum, RSI extremes, rule-based scores, short-term volatility",
+        "Valuation multiples (P/E, P/S) contribute — but secondary to price-action features",
+        "Transformed pipeline: rolling z-scores and regime flags rank highly for XGBoost and RF",
+        "Theme roll-up aggregates 100+ features into 8 interpretable families for stakeholder presentation",
+    ], 0.55, 1.25, 9.1, 3.2, size=14)
+    rect(sl, 0.5, 4.6, 9.0, 0.7, RGBColor(0xE0, 0xF2, 0xFE))
+    txt(sl, "Cross-model agreement on feature families is evidence that the relationship is real, not model-specific. "
+            "A feature that matters to Logistic Regression coefficients AND XGBoost impurity gain is likely a genuine "
+            "statistical signal — not an artifact of model architecture.",
+        0.65, 4.65, 8.7, 0.58, size=11, color=NAVY)
+
+    # ---- 13. Multi-Layer Validation ------------------------------------
+    sl = prs.slides.add_slide(blank)
+    light_slide(sl)
+    title_bar(sl, "Multi-Layer Validation",
+              "Four independent evaluation angles — not just the ML chronological split")
+    pg(sl, 13, TOTAL)
     layers = [
-        ("Chronological ML",  "70/85 date split, no shuffle. Primary evaluation method. Temporally sound but same tickers across splits."),
-        ("Event-Level Valid.", "Train before a historical crisis, test on the pre-event window. Fewer observations but the honest generalization test."),
-        ("Hazard Model",      "Cox-PH model: estimates conditional probability of drawdown given time-in-regime. Complements point-in-time ML scores."),
-        ("Poisson Count",     "Count model: how many drawdown events expected in the next N weeks? Different question, complementary answer."),
-        ("Rule-Based Baseline", "Hindenburg Omen, RSI extremes, CAPE excess, yield inversion. PR-AUC ≈ 0.096 — ML must beat this to justify complexity."),
+        (NAVY, "1  Chronological ML",  "70/15/15 date split. Primary. Same tickers may appear in train and test."),
+        (TEAL, "2  Event-Level Valid.","Train before crisis; test on pre-event window. Fewer obs, most honest generalization."),
+        (MINT, "3  Hazard Model",      "Cox-PH: conditional drawdown probability given time-in-regime. Different question."),
+        (RGBColor(0x0E, 0x78, 0x9E), "4  Poisson Count", "Expected drawdown events in next N weeks. Complements point-in-time classifier."),
+        (MUTED, "5  Rule-Based Sanity", "Hindenburg Omen, CAPE, RSI extremes. PR-AUC 0.096 — ML must beat this."),
     ]
-    for i, (title, body) in enumerate(layers):
-        y = 1.25 + i * 0.82
-        color = [NAVY, TEAL, MINT, RGBColor(0x0E, 0x78, 0x9E), RGBColor(0x64, 0x74, 0x8B)][i]
-        add_rect(sl, 0.5, y, 0.07, 0.62, color)
-        add_text_box(sl, title, 0.7, y, 3.0, 0.3, font_size=13, bold=True, color=NAVY)
-        add_text_box(sl, body, 0.7, y + 0.30, 9.0, 0.38, font_size=11, color=DARK_T)
+    for i, (vc, title, body) in enumerate(layers):
+        y = 1.22 + i * 0.8
+        rect(sl, 0.5, y, 0.07, 0.6, vc)
+        txt(sl, title, 0.7, y+0.02, 3.5, 0.3, size=13, bold=True, color=NAVY)
+        txt(sl, body,  0.7, y+0.32, 9.0, 0.35, size=11, color=DARK)
 
-    # ------------------------------------------------------------------ 13. Dashboard Overview
-    sl = prs.slides.add_slide(blank_layout)
-    dark_slide(sl)
-    add_slide_number(sl, 13, TOTAL, dark=True)
-    add_text_box(sl, "14-Section Interactive Dashboard", 0.5, 0.25, 9.5, 0.55,
-                 font_size=28, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-    add_text_box(sl, "Streamlit · python dashboard.py  ·  http://localhost:8502",
-                 0.5, 0.80, 9.5, 0.38, font_size=14, color=ICE, align=PP_ALIGN.CENTER)
-
-    pages_left = [
-        "1.  Executive Summary & Story",
-        "2.  Data Overview & EDA",
-        "3.  Bubble Explorer",
-        "4.  Historical Comparison",
-        "5.  Bubble Vital Signs",
-        "6.  Current AI Cycle Monitor",
-        "7.  ML Model Lab  ★",
-    ]
-    pages_right = [
-        "8.   Rare Event & Imbalance Lab",
-        "9.   Event-Level Validation",
-        "10. Hazard & Poisson Models",
-        "11. Investment Simulator",
-        "12. Methods & Diagrams",
-        "13. Literature Research",
-        "14. Data Quality & Limitations",
-    ]
-    add_rect(sl, 0.4, 1.35, 4.55, 3.8, RGBColor(0x11, 0x2B, 0x6E))
-    add_rect(sl, 5.1, 1.35, 4.55, 3.8, RGBColor(0x11, 0x2B, 0x6E))
-    for i, t in enumerate(pages_left):
-        y = 1.5 + i * 0.48
-        add_text_box(sl, t, 0.6, y, 4.1, 0.40, font_size=12, color=ICE if "★" not in t else WHITE,
-                     bold=("★" in t))
-    for i, t in enumerate(pages_right):
-        y = 1.5 + i * 0.48
-        add_text_box(sl, t, 5.25, y, 4.1, 0.40, font_size=12, color=ICE)
-
-    add_text_box(sl, "★  ML Lab includes: baseline toggle · Transformed vs Baseline · Feature Audit · Recommended Model",
-                 0.5, 5.2, 9.5, 0.3, font_size=10, italic=True, color=RGBColor(0x8B, 0xA4, 0xD4),
-                 align=PP_ALIGN.CENTER)
-
-    # ------------------------------------------------------------------ 14. Limitations
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 14. Limitations -----------------------------------------------
+    sl = prs.slides.add_slide(blank)
     light_slide(sl)
-    add_title_bar(sl, "Limitations & Honest Assessment",
-                  "What we can claim · What we cannot · What was out of scope")
-    add_slide_number(sl, 14, TOTAL)
-
+    title_bar(sl, "Limitations: Honest Assessment",
+              "Weak results are not hidden — they are part of the conclusion")
+    pg(sl, 14, TOTAL)
     limits = [
-        ("Small true-event count",
-         "Despite 597K rows, the number of truly independent bubble events is perhaps 15–30. "
-         "Statistical power is limited. Confidence intervals on PR-AUC are wide."),
-        ("Survivorship & selection bias",
-         "Ticker list reflects assets that existed and were liquid enough to track. "
-         "Many assets from the 1927–1960 period are missing. Results may not generalise."),
-        ("Data snooping risk",
-         "Iterative feature engineering on the same dataset can implicitly overfit even with "
-         "chronological splits. Event-level validation helps but does not fully eliminate this."),
-        ("Modest absolute performance",
-         "Best test PR-AUC is 0.128 vs 0.085 base rate. This is real but modest signal — not a "
-         "trading edge, not a crash alarm, not actionable without further validation."),
-        ("Live deployment not attempted",
-         "The dashboard simulates live scoring (ml_inference.py). No paper-trading validation "
-         "was performed. Real-world deployment would require data pipeline hardening."),
+        (CORAL, "Small true-event count",
+         "~15–30 independent bubble episodes globally. Wide PR-AUC confidence intervals. "
+         "597K rows ≠ 597K independent observations."),
+        (CORAL, "Implicit data snooping",
+         "Iterative feature engineering on the same dataset creates overfitting risk even with "
+         "chronological splits. Event-level validation partially mitigates this."),
+        (CORAL, "Modest absolute performance",
+         "Best PR-AUC 0.128 vs 0.085 base rate. Real signal — but not a trading edge, not a crash alarm. "
+         "Top-5% bucket is 82.5% false positives."),
+        (CORAL, "Survivorship & coverage bias",
+         "Ticker list reflects assets that survived and were liquid. 1927–1960 data is sparse for many tickers."),
+        (CORAL, "No live deployment validation",
+         "ml_inference.py simulates live scoring. No paper-trading or out-of-sample deployment validation "
+         "was performed."),
     ]
-    for i, (title, body) in enumerate(limits):
-        y = 1.25 + i * 0.82
-        add_rect(sl, 0.5, y, 0.06, 0.60, CORAL)
-        add_text_box(sl, title, 0.7, y, 3.5, 0.28, font_size=13, bold=True, color=RGBColor(0xC0, 0x30, 0x30))
-        add_text_box(sl, body, 0.7, y + 0.28, 9.0, 0.40, font_size=11, color=DARK_T)
+    for i, (vc, title, body) in enumerate(limits):
+        y = 1.22 + i * 0.82
+        rect(sl, 0.5, y, 0.06, 0.6, vc)
+        txt(sl, title, 0.7, y+0.02, 3.5, 0.28, size=13, bold=True, color=RGBColor(0xC0, 0x30, 0x30))
+        txt(sl, body,  0.7, y+0.30, 9.0, 0.40, size=11, color=DARK)
 
-    # ------------------------------------------------------------------ 15. Contributions
-    sl = prs.slides.add_slide(blank_layout)
-    light_slide(sl)
-    add_title_bar(sl, "Technical Contributions",
-                  "Pipeline · Tooling · Evaluation framework · Educational design")
-    add_slide_number(sl, 15, TOTAL)
-
-    contribs = [
-        ("End-to-end pipeline",          "14-script reproducible pipeline from raw API calls to scored dashboard"),
-        ("Segment-adjusted labels",       "Segment-specific drawdown thresholds — a principled improvement over single-threshold labelling"),
-        ("Phase 8 leakage-proof transforms", "TransformFitState: winsor/regime fits on TRAIN only, shift(1) lookback guard in all rolling features"),
-        ("Multi-layer evaluation",        "Chronological + event-level + hazard + Poisson — four independent angles on the same question"),
-        ("Composite model scorer",        "Pre-specified weighted scoring formula across 5 metrics; auditable, replicable, not cherry-picked"),
-        ("14-tab narrative dashboard",    "Each page includes interpretation boxes, regime badges, missing-artifact notices, expanders with methodology"),
-        ("Honest framing throughout",     "Every chart includes a 'do not overclaim' interpretation box; base rates shown alongside all lift metrics"),
-    ]
-    for i, (title, body) in enumerate(contribs):
-        y = 1.25 + i * 0.60
-        add_rect(sl, 0.5, y, 0.06, 0.44, MINT if i % 2 == 0 else TEAL)
-        add_text_box(sl, title, 0.7, y, 3.6, 0.25, font_size=12, bold=True, color=NAVY)
-        add_text_box(sl, body, 0.7, y + 0.24, 9.0, 0.28, font_size=11, color=DARK_T)
-
-    # ------------------------------------------------------------------ 16. Conclusion
-    sl = prs.slides.add_slide(blank_layout)
+    # ---- 15. Conclusion ------------------------------------------------
+    sl = prs.slides.add_slide(blank)
     dark_slide(sl)
-    add_slide_number(sl, 16, TOTAL, dark=True)
-    add_text_box(sl, "Conclusion", 0.6, 0.3, 8.8, 0.5,
-                 font_size=16, color=ICE)
-    add_text_box(sl, "What We Learned", 0.6, 0.75, 9.0, 0.65,
-                 font_size=32, bold=True, color=WHITE)
-    add_rect(sl, 0.6, 1.42, 8.8, 0.04, MINT)
-
+    txt(sl, "Conclusion", 0.6, 0.28, 8.8, 0.45, size=16, color=ICE)
+    txt(sl, "What the Project Shows", 0.6, 0.68, 9.0, 0.65, size=32, bold=True, color=WHITE)
+    rect(sl, 0.6, 1.38, 8.8, 0.04, MINT)
+    pg(sl, 15, TOTAL, dark=True)
     takeaways = [
-        "Logistic Regression with chronological splits is the most defensible baseline — simpler models survive honest evaluation better than complex ones",
-        "Top-5% risk ranking enriches the event rate ~2×, which is modest but real signal on 97 years of data",
-        "Feature transformations provide +0.01–0.015 PR-AUC for tree models — worthwhile but not game-changing",
-        "The honest answer is that predicting bubble bursts is hard and our modest PR-AUC reflects that honestly",
-        "The dashboard infrastructure — interpretation boxes, regime badges, multi-layer validation, missing-artifact notices — is the project's most durable contribution",
+        "A regularised linear model (Logistic Regression) is the most defensible baseline and recommended overall model — PR-AUC 0.128 vs 0.085 base rate",
+        "XGBoost and Balanced RF beat the rule-based baseline but do not outperform Logistic Regression — complexity not justified on this event count",
+        "Feature transformations give tree models +0.01–0.015 PR-AUC; LightGBM (Phase 8 only) is competitive with XGBoost but not superior",
+        "Top-5% risk ranking enriches drawdown events ~2× — modest but real; 82.5% of flagged rows still had no drawdown",
+        "Modest PR-AUC from a genuinely difficult rare-event problem is a legitimate, honest ML conclusion",
     ]
     for i, t in enumerate(takeaways):
-        y = 1.6 + i * 0.60
-        add_rect(sl, 0.55, y + 0.08, 0.3, 0.3, MINT)
-        add_text_box(sl, str(i + 1), 0.58, y + 0.08, 0.28, 0.3,
-                     font_size=13, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
-        add_text_box(sl, t, 1.0, y, 8.5, 0.52, font_size=13, color=ICE)
+        y = 1.55 + i * 0.60
+        rect(sl, 0.55, y+0.08, 0.3, 0.3, MINT)
+        txt(sl, str(i+1), 0.58, y+0.08, 0.28, 0.3, size=13, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
+        txt(sl, t, 1.0, y+0.04, 8.5, 0.52, size=12, color=ICE)
+    rect(sl, 0.5, 4.88, 9.0, 0.52, RGBColor(0x11, 0x2B, 0x6E))
+    txt(sl, "Educational research project. The dashboard is the interpretation layer. "
+            "The ML pipeline — dataset, labels, splits, multi-model evaluation, rare-event metrics — is the deliverable. "
+            "Nothing here is investment advice.",
+        0.65, 4.93, 8.7, 0.40, size=11, italic=True, color=ICE)
 
-    add_rect(sl, 0.5, 4.88, 9.0, 0.55, RGBColor(0x11, 0x2B, 0x6E))
-    add_text_box(sl,
-                 "This is an educational research project. Nothing here constitutes investment advice. "
-                 "All findings should be validated on fresh out-of-sample data before any application.",
-                 0.65, 4.93, 8.7, 0.40, font_size=11, italic=True, color=ICE)
-
-    # ------------------------------------------------------------------
-    prs.save(str(out_path))
-    print(f"Saved: {out_path}  ({len(prs.slides)} slides)")
+    prs.save(str(out))
+    print(f"Saved: {out}  ({len(prs.slides)} slides)")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 # Professor Q&A Guide — Anticipated Questions & Honest Answers
-## Economic Bubble Monitoring Dashboard
+## Supervised ML: Future Drawdown Risk Classification
+### Note: The dashboard is the interpretation layer. The ML pipeline is the main deliverable.
 
 ---
 
@@ -69,9 +70,9 @@ We use `target_valid_burst_6m_segment` to exclude the 26-week post-burst overlap
 
 Logistic Regression with L2 regularisation already adapts to feature scale through the regularisation penalty — features with larger raw values receive proportionally larger penalties, producing an effect similar to standardisation. Tree models split on raw feature values, so log-compressing right-skewed valuations or normalising by rolling z-score genuinely changes which thresholds produce informative splits. The result — linear models indifferent, tree models improved — is exactly what feature transformation theory predicts.
 
-**Q: Why did you include LightGBM only in Phase 8 and not Phase 1?**
+**Q: Why does LightGBM only appear in the transformed-feature results, not the baseline?**
 
-LightGBM was added specifically as a Phase 8 benchmark to compare against XGBoost in the transformed-feature setting. It was not included in the baseline to keep the baseline pipeline clean and ensure all its artifacts were from a single committed run. Adding it post-hoc to Phase 8 is the methodologically sound approach — it does not contaminate baseline comparisons.
+LightGBM was added as a transformed-feature benchmark in Phase 8. It was not trained in the baseline pipeline (`model_training.py`). The baseline models are: Logistic Regression, Elastic Net, Random Forest, Balanced Random Forest, XGBoost, and the Rule-Based Warning Score. LightGBM appears only when the transformed-feature toggle is activated in the ML Lab, and this is made explicit in the dashboard text. The dashboard shows "LightGBM was added as a transformed-feature benchmark. It is not part of the original baseline model comparison unless explicitly trained in the baseline pipeline." Note also that Balanced Random Forest is in the baseline but was not carried into Phase 8 — the two pipelines are not symmetric, and both facts are documented.
 
 ---
 

@@ -1,150 +1,136 @@
-# Speaker Script — Economic Bubble Monitoring Dashboard
-## Timing guide: 20–25 minutes total + 5–10 minutes Q&A
+# Speaker Script — Supervised ML: Future Drawdown Risk Classification
+## Timing guide: 10–12 minutes presentation + 5–8 minutes Q&A
 
 ---
 
 ### SLIDE 1 — Title (0:00–0:30)
 
-"Thank you. Today I'm presenting the Economic Bubble Monitoring and Investment Strategy Dashboard — an end-to-end machine learning research pipeline built to study whether historical market data can detect conditions that precede major economic drawdowns.
+"Thank you. Today I'm presenting a supervised machine learning project: classifying future segment-adjusted drawdown risk from financial market data.
 
-Before I go further: everything here is an educational research project. Nothing I show constitutes investment advice, and I'll be honest throughout about what the models can and cannot do."
+This is a binary classification pipeline applied to a rare-event problem — predicting whether assets will cross major drawdown thresholds within six months. The interactive dashboard you'll see is the interpretation layer. The ML pipeline is the main deliverable.
 
----
-
-### SLIDE 2 — Research Question (0:30–2:00)
-
-"The core question is: can we build a detector — not a predictor — that identifies when current market conditions resemble historical pre-crash regimes?
-
-The key framing choice is the word 'detector.' Forecasting the exact timing of a crash is widely considered near-impossible. A more tractable goal is to ask: right now, does the data pattern look like what we saw before the dot-com collapse, the 2008 crisis, or the 2020 drawdown?
-
-Our target label, burst_6m_segment, equals 1 if the asset crosses a segment-adjusted major drawdown threshold within 26 weekly observations — roughly 6 months. The segment-adjusted part is important and I'll explain it in a moment."
+Nothing here is investment advice."
 
 ---
 
-### SLIDE 3 — Dataset Architecture (2:00–3:30)
+### SLIDE 2 — Why This Problem (0:30–1:30)
 
-"The dataset spans 81 tickers, 597,806 weekly rows, from 1927 to May 2026. That sounds large, but I want to be upfront about a key limitation: the number of truly *independent* bubble events is much smaller — perhaps 15 to 30 globally. The rows are highly autocorrelated. One bubble regime can generate hundreds of positive-label rows for dozens of tickers simultaneously.
+"Why study financial drawdowns with ML?
 
-We use four asset segments because a −20% drawdown in SPY, the S&P 500 ETF, is a major market correction. The same −20% move in Bitcoin or a speculative tech fund is an ordinary week. Pooling them would corrupt the label."
+Bubble episodes appear in every market cycle. Practitioners want early-warning signal — but predicting exact crash timing is widely regarded as impossible. A more tractable ML formulation is: does today's feature vector resemble the conditions that historically preceded major drawdowns?
 
----
-
-### SLIDE 4 — Target Label (3:30–5:00)
-
-"The segment thresholds are −20% for broad ETFs, −35% for mega-cap AI/tech, −50% for speculative assets, and −25% for the global pooled scope.
-
-The split design is strictly chronological. The first 70% of unique dates becomes training, the next 15% validation, the last 15% test. No row is randomly shuffled. This is non-negotiable for time series — random shuffling would leak future information into training and produce absurdly optimistic metrics.
-
-The positive rate ranges from 6.8% in mega-cap AI/tech to 11% in broad ETFs. This imbalance is the central challenge for our classifiers."
+This turns a speculative forecasting problem into a supervised rare-event classification problem — which is well-defined, evaluable, and honest about its limits."
 
 ---
 
-### SLIDE 5 — ML Pipeline (5:00–6:30)
+### SLIDE 3 — Dataset (1:30–2:30)
 
-"The pipeline has 6 stages. Raw price data from Yahoo Finance is ingested, then technically engineered into momentum, volatility, volume, and valuation features. The ML dataset is constructed with the segment-adjusted labels. The chronological split is applied. We train five model families per scope — Logistic Regression, Elastic Net, Random Forest, Balanced Random Forest, and XGBoost — and evaluate on PR-AUC as the primary metric because it is not corrupted by the true-negative majority."
+"The data is original — not a Kaggle dataset. I collected 81 tickers via Yahoo Finance and FRED: broad ETFs, mega-cap tech, speculative assets, and macro indicators, going back to 1927 where available.
 
----
-
-### SLIDE 6 — Model Performance (6:30–8:30)
-
-"Here is the headline performance chart. The primary metric is PR-AUC — precision-recall area under curve. The baseline is the positive rate: 8.5% for the global scope. A useless random classifier would score roughly 0.085.
-
-Our best models achieve 0.128. That's a ~50% improvement over random — real signal, but modest. And here is the first 'wow' moment: Logistic Regression matches or beats XGBoost on PR-AUC. A simple linear model with L2 regularisation is as good as our most complex gradient-boosted ensemble.
-
-I want you to take this seriously as a finding, not an embarrassment. It tells us something important about the data."
+After feature engineering, the dataset has 597,806 weekly rows. The key design choice is segment-specific drawdown thresholds: −20% for broad ETFs, −35% for mega-cap tech, −50% for speculative assets. This prevents labelling a Bitcoin −20% move the same way as an S&P 500 −20% move."
 
 ---
 
-### SLIDE 7 — Top-K Lift (8:30–10:00)
+### SLIDE 4 — Target Label (2:30–3:15)
 
-"The second wow moment is top-5% lift. When we rank all ticker-weeks by predicted probability and isolate the highest-risk 5%, that bucket contains real drawdown events at **twice the baseline rate** — 2.15× for Balanced Random Forest on mega-cap AI/tech, 2.05× for Logistic Regression globally.
+"The target, burst_6m_segment, equals 1 if the asset hits its segment-adjusted threshold within 26 weekly observations — roughly six months forward.
 
-This means: if you used these scores to prioritise which assets to examine more closely, you'd be looking at a pool that is twice as rich in real pre-drawdown conditions as a random selection.
-
-I need to be equally clear about what this is NOT: 82.5% of 'high-risk' rows had no drawdown. This is risk enrichment, not certainty."
+This creates an imbalanced binary classification problem: the positive rate is 6.8% to 11% depending on scope. The chronological 70/15/15 split is strict — no random shuffling. Shuffling would leak future market states into training and produce inflated metrics."
 
 ---
 
-### SLIDE 8 — Why Simple Beats Complex (10:00–11:30)
+### SLIDE 5 — EDA & Class Imbalance (3:15–4:00)
 
-"Why does Logistic Regression win? Four reasons. First, the true event count is small — around 500 globally in the test set. Tree ensembles need more signal. Second, autocorrelation means the effective sample size is far smaller than 597K rows. Third, many bubble precursors are nearly linear — RSI extremes, momentum ratios, yield curve inversions. Fourth, L2 regularisation is very effective when your number of true events is small relative to the feature count.
+"EDA confirmed several things: strong class imbalance, high momentum autocorrelation within bubble regimes, wide valuation dispersion across asset segments, and meaningful distributional differences between pre-burst and non-burst periods for RSI, price-to-sales, and drawdown velocity.
 
-The lesson: always train a regularised linear baseline first. Justify complexity by demonstrably improving out-of-time metrics."
-
----
-
-### SLIDE 9 — Rare Event Challenge (11:30–13:00)
-
-"With an 8.5% positive rate, standard classifiers are tempted to predict 'no crash' for everything and score 91.5% accuracy. Accuracy is misleading here.
-
-We use three tools to address this: SMOTE oversampling in training (though this inflates recall at the cost of precision), Balanced Random Forest with class-weight adjustment, and cost-ratio threshold analysis where we explicitly model the relative cost of a false negative versus a false positive.
-
-We also enforce a constrained rare-event threshold: models must achieve minimum precision of 12% and an alert rate no higher than 20% — preventing models from achieving high recall simply by flagging nearly everything."
+We also confirmed that a naive majority-class classifier would score 91.5% accuracy with 0% recall on positive cases — which is why accuracy is not our metric."
 
 ---
 
-### SLIDE 10 — Feature Transformations (13:00–14:30)
+### SLIDE 6 — Feature Engineering (4:00–4:45)
 
-"Phase 8 adds a controlled feature transformation experiment. We run the exact same model families, the same chronological splits, and the same metrics — the only thing that changes is the feature pipeline.
+"Features cover six families: price momentum and RSI, volume ratios, valuation multiples, macro indicators, rule-based bubble scores, and drawdown velocity.
 
-Nine transformation families produce 88 additional columns: log and signed-log compressions for skewed valuation metrics, winsorisation to remove extreme outliers fitted only on the training split, rolling z-scores by ticker with a shift(1) lookback guard to prevent leakage, percentile ranks, regime flags, interaction features, volatility-adjusted returns, drawdown-state indicators, and squared terms.
-
-The leakage guard is critical: winsorisation bounds and regime thresholds are fitted exclusively on the training split and applied unchanged to validation and test."
+Phase 8 added 88 transformed features: log and signed-log compressions, winsorisation fitted on train only, rolling z-scores by ticker with shift(1) lookback guard, regime flags, interaction terms, and squared terms. Leakage prevention was enforced through a TransformFitState object that fits bounds on training data only."
 
 ---
 
-### SLIDE 11 — Transformation Results (14:30–15:30)
+### SLIDE 7 — Benchmark Model (4:45–5:30)
 
-"The results are honest. Tree models gain +0.01 to +0.015 PR-AUC from transformations. Linear models gain almost nothing — they already handle scale via regularisation.
+"The benchmark is Logistic Regression with L2 regularisation — the simplest defensible baseline for imbalanced binary classification.
 
-We also benchmarked LightGBM as an additional model family in Phase 8. Its PR-AUC of 0.113 on the broad ETF scope is competitive with XGBoost but does not surpass it.
+Test-set results: PR-AUC 0.128 versus a base rate of 0.085. ROC-AUC 0.615. Top-5% lift 2.05×.
 
-No model crosses what I'd call a 'practically useful' bar of PR-AUC > 0.20. The story is consistent positive deltas across tree models — which is the honest interpretation — not a dramatic improvement."
-
----
-
-### SLIDE 12 — Multi-Layer Validation (15:30–17:00)
-
-"One of the project's architectural strengths is that we don't rely on a single evaluation method. We use five layers.
-
-Chronological ML splits are the primary method. Event-level validation trains before a historical crisis and tests on the pre-event window — it's less flattering but the most honest generalization test. The Cox proportional hazard model asks a different question: given time-in-regime, what's the conditional probability of drawdown? The Poisson count model asks: how many drawdowns are expected in the next N weeks? And the rule-based baseline — Hindenburg Omen, RSI extremes, CAPE excess — must be beaten by any ML model to justify its complexity. The baseline achieves PR-AUC 0.096."
+This is modest signal — but real. And it is the honest baseline every more-complex model must beat."
 
 ---
 
-### SLIDE 13 — Dashboard Overview (17:00–18:00)
+### SLIDE 8 — All Models Tested (5:30–6:15)
 
-"The dashboard has 14 sections organized as a narrative. You start at the Executive Summary, proceed through data exploration, the bubble explorer and historical comparisons, vital signs, the live AI cycle monitor, and then the ML Lab — which is where most of the research lives.
+"We trained five model families per scope — four asset segments each. That is 24 baseline model × scope combinations.
 
-The ML Lab now has 12 sub-tabs: model comparison, ROC curves, calibration, confusion matrices, false-positive audit, feature importance, phase 8 toggle and comparison, feature selection audit, and the recommended overall model composite score.
+The five families: Logistic Regression as benchmark, Elastic Net as the regularised linear comparison, Random Forest and Balanced Random Forest as nonlinear and imbalance-aware tree models, and XGBoost as the boosted-tree challenger.
 
-Every page includes interpretation boxes with 'do not overclaim' guidance, and missing-artifact notices that tell the user exactly which script to run if outputs are absent."
+The Rule-Based Warning Score — Hindenburg Omen, CAPE excess, RSI extremes — is the interpretable sanity-check baseline. Any ML model must beat its PR-AUC of 0.096.
 
----
-
-### SLIDE 14 — Limitations (18:00–19:30)
-
-"I want to spend a slide on limitations because they're important.
-
-True event count: 597K rows but perhaps 15–30 independent bubble events. Confidence intervals on PR-AUC are wide. Survivorship and selection bias: the ticker list reflects assets that survived and were liquid. Many 1927–1960 assets are missing. Data snooping risk: even with chronological splits, iterative feature engineering on the same dataset can implicitly overfit. Modest absolute performance: PR-AUC 0.128 versus 0.085 base rate. Real but modest. No live deployment validation was attempted."
+LightGBM was added as a Phase 8 transformed-feature benchmark only. It is not part of the original baseline comparison."
 
 ---
 
-### SLIDE 15 — Technical Contributions (19:30–20:30)
+### SLIDE 9 — Train/Val/Test & Metrics (6:15–7:00)
 
-"The technical contributions are: a 14-script reproducible pipeline, segment-adjusted labels, a leakage-proof transformation framework, multi-layer validation from four independent angles, a composite model scoring formula that's pre-specified and auditable, a 14-tab narrative dashboard, and honest framing throughout — every chart includes a 'do not overclaim' box."
+"The chronological split: first 70% of unique dates for training, next 15% for validation, final 15% for test. No shuffling.
 
----
+Primary metric: PR-AUC — precision-recall area under curve, which is not corrupted by the true-negative majority. Secondary metrics: ROC-AUC, MCC, false-positives per true positive, Brier score, and top-5% / top-10% lift.
 
-### SLIDE 16 — Conclusion (20:30–21:30)
-
-"To conclude: Logistic Regression with chronological splits is the most defensible model. Top-5% risk ranking enriches events ~2× — real but modest. Feature transformations help tree models by ~0.01 PR-AUC. The honest answer is that predicting bubble bursts is hard and our metrics reflect that.
-
-The dashboard infrastructure — interpretation boxes, regime badges, multi-layer validation — may be the project's most durable contribution. It gives any future researcher a framework for honest rare-event evaluation.
-
-Thank you. I'm happy to take questions."
+Prediction thresholds are tuned on validation, not hard-coded at 0.50."
 
 ---
 
-## Closing transition to Q&A
+### SLIDE 10 — Model Results (7:00–8:00)
 
-*"I'm going to leave the dashboard on screen during questions. If there's anything you'd like to see live, I can navigate to it."*
+"Logistic Regression and Elastic Net share the top PR-AUC of 0.128 on the global test split. XGBoost reaches 0.109. Balanced Random Forest achieves 0.108 with higher recall.
+
+The main finding: a regularised linear model equals or beats the boosted ensemble. This is expected — with roughly 500 independent positive-class events in the test set, XGBoost's additional capacity is not justified by the data.
+
+The composite scoring formula — PR-AUC 35%, ROC-AUC 20%, MCC 20%, FP/TP burden −15%, Brier −10% — selects Logistic Regression / global as the recommended overall model."
+
+---
+
+### SLIDE 11 — Feature Transformations: Three Model Groups (8:00–8:45)
+
+"Feature transformations change how predictor variables are represented before training. The model family stays the same — Logistic Regression is still Logistic Regression — but the input feature geometry changes.
+
+Before comparing results, I want to be precise about three groups of models.
+
+Group 1: Models present in both the baseline and the transformed pipeline — Logistic Regression, Elastic Net, Random Forest, XGBoost, and the Rule-Based score. These are the only models with valid before/after deltas. Tree models gained +0.010 to +0.015 PR-AUC. Linear models gained near zero.
+
+Group 2: Balanced Random Forest exists only in the baseline. It was not carried into Phase 8. There is no transformed version, so no delta is calculated.
+
+Group 3: LightGBM exists only in the transformed pipeline. It was added as a Phase 8 benchmark. It has no baseline result, so comparing it to baseline numbers would be misleading. LightGBM scored PR-AUC 0.119 on broad ETF scope — competitive with XGBoost but not a before/after result.
+
+No model in either pipeline crosses PR-AUC 0.20."
+
+---
+
+### SLIDE 12 — Feature Importance (8:45–9:20)
+
+"Logistic Regression coefficients and tree-model feature importance both point to the same families: price momentum, RSI distance from extremes, rule-based bubble scores, and short-term volatility.
+
+Valuation features contribute less in isolation. Transformed features — particularly rolling z-scores and regime flags — rank highly for XGBoost and Random Forest in the Phase 8 results."
+
+---
+
+### SLIDE 13 — Limitations (9:20–10:00)
+
+"Honest limitations. The number of truly independent bubble events is 15–30 globally — confidence intervals on PR-AUC are wide. Survivorship bias in the ticker universe. Iterative feature engineering creates implicit overfitting risk even with chronological splits. The top-5% bucket is 82.5% false positives. No live paper-trading validation was performed."
+
+---
+
+### SLIDE 14 — Conclusion (10:00–10:30)
+
+"What this project shows: you can build a principled rare-event classification pipeline on financial market data, evaluate it honestly with PR-AUC and top-k lift rather than accuracy, and show that a regularised linear model is the most defensible baseline.
+
+The result is modest signal — PR-AUC 0.128 versus 0.085 base rate. Modest signal from a genuinely difficult problem is a legitimate and honest ML conclusion.
+
+Thank you."
